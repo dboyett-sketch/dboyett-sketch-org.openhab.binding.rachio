@@ -1,154 +1,295 @@
 package org.openhab.binding.rachio.internal;
 
-import java.util.Set;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.openhab.core.thing.ThingTypeUID;
+import org.openhab.core.thing.type.ChannelTypeUID;
 
 /**
  * The {@link RachioBindingConstants} class defines common constants, which are
  * used across the whole binding.
  *
- * @author Damion Boyett - Initial contribution
+ * @author Brian G. - Initial contribution (from 2.5 binding)
+ * @author Daniel B. - Major rewrite for OpenHAB 5.x
  */
 @NonNullByDefault
 public class RachioBindingConstants {
 
+    // Binding ID
     public static final String BINDING_ID = "rachio";
 
-    // List of all Thing Type UIDs
+    // Bridge
     public static final ThingTypeUID THING_TYPE_BRIDGE = new ThingTypeUID(BINDING_ID, "bridge");
+    public static final String BRIDGE_TYPE_ID = "rachio-bridge";
+
+    // Device
     public static final ThingTypeUID THING_TYPE_DEVICE = new ThingTypeUID(BINDING_ID, "device");
+    public static final String DEVICE_TYPE_ID = "rachio-device";
+
+    // Zone
     public static final ThingTypeUID THING_TYPE_ZONE = new ThingTypeUID(BINDING_ID, "zone");
+    public static final String ZONE_TYPE_ID = "rachio-zone";
 
-    // List of all Channel ids - UPDATED FOR DYNAMIC CHANNELS
-    public static final String CHANNEL_START_ALL_ZONES = "startAllZones";
-    public static final String CHANNEL_START_NEXT_ZONE = "startNextZone";
-    public static final String CHANNEL_STOP_WATERING = "stopWatering";
-    public static final String CHANNEL_RAIN_DELAY = "rainDelay";
-    public static final String CHANNEL_START_ZONE = "startZone";
-    
-    // Device-specific channel IDs
-    public static final String CHANNEL_DEVICE_STATUS = "device#status";
-    
-    // Zone-specific channel IDs  
-    public static final String CHANNEL_ZONE_NAME = "zone#zoneName";
-    public static final String CHANNEL_ZONE_ENABLED = "zone#zoneEnabled";
-    public static final String CHANNEL_ZONE_RUNTIME = "zone#zoneRuntime";
+    // Bridge Configuration Properties
+    public static final String CONFIG_API_KEY = "apiKey";
+    public static final String CONFIG_WEBHOOK_ID = "webhookId";
+    public static final String CONFIG_WEBHOOK_SECRET = "webhookSecret";
+    public static final String CONFIG_WEBHOOK_URL = "webhookUrl";
+    public static final String CONFIG_REFRESH_INTERVAL = "refreshInterval";
+    public static final String CONFIG_ALLOWED_IPS = "allowedIPs";
+    public static final String CONFIG_USE_AWS_IPS = "useAWSIPs";
+    public static final String CONFIG_POLLING_ENABLED = "pollingEnabled";
 
-    // Channel group and property identifiers - KEPT FOR BACKWARD COMPATIBILITY
-    public static final String DEVICE = "device";
-    public static final String STATUS = "status";
-    public static final String ZONE = "zone";
-    public static final String ZONE_NAME = "zoneName";
-    public static final String ZONE_ENABLED = "zoneEnabled";
-    public static final String ZONE_RUNTIME = "zoneRuntime";
-    public static final String ZONE_STATUS = "zoneStatus";
-    public static final String RUN_ZONE = "runZone";
-    public static final String STOP_WATERING = "stopWatering";
+    // Device Configuration Properties
+    public static final String CONFIG_DEVICE_ID = "deviceId";
+    public static final String CONFIG_DEVICE_NAME = "deviceName";
 
-    // Bridge config properties - ALL PARAMETERS ADDED
-    public static final String API_KEY = "apiKey";
-    public static final String WEBHOOK_ID = "webhookId";
-    public static final String POLLING_INTERVAL = "pollingInterval";
-    public static final String DEFAULT_RUNTIME = "defaultRuntime";
-    public static final String CALLBACK_URL = "callbackUrl";
-    public static final String CLEAR_ALL_CALLBACKS = "clearAllCallbacks";
-    public static final String IP_FILTER = "ipFilter";
+    // Zone Configuration Properties
+    public static final String CONFIG_ZONE_ID = "zoneId";
+    public static final String CONFIG_ZONE_NUMBER = "zoneNumber";
 
-    // Device config properties
-    public static final String DEVICE_ID = "deviceId";
+    // Bridge Channels
+    public static final String CHANNEL_BRIDGE_STATUS = "bridgeStatus";
+    public static final String CHANNEL_BRIDGE_WEBHOOK_STATUS = "webhookStatus";
+    public static final String CHANNEL_BRIDGE_RATE_LIMIT_TOTAL = "rateLimitTotal";
+    public static final String CHANNEL_BRIDGE_RATE_LIMIT_REMAINING = "rateLimitRemaining";
+    public static final String CHANNEL_BRIDGE_RATE_LIMIT_PERCENT = "rateLimitPercent";
+    public static final String CHANNEL_BRIDGE_RATE_LIMIT_RESET = "rateLimitReset";
+    public static final String CHANNEL_BRIDGE_API_STATUS = "apiStatus";
+    public static final String CHANNEL_BRIDGE_LAST_UPDATE = "lastUpdate";
+    public static final String CHANNEL_BRIDGE_WEBHOOK_COUNT = "webhookCount";
+    public static final String CHANNEL_BRIDGE_POLLING_STATUS = "pollingStatus";
 
-    // Zone config properties
-    public static final String ZONE_ID = "zoneId";
+    // Device Channels
+    public static final String CHANNEL_DEVICE_NAME = "deviceName";
+    public static final String CHANNEL_DEVICE_STATUS = "deviceStatus";
+    public static final String CHANNEL_DEVICE_ONLINE = "deviceOnline";
+    public static final String CHANNEL_DEVICE_PAUSED = "devicePaused";
+    public static final String CHANNEL_DEVICE_RAIN_DELAY = "rainDelay";
+    public static final String CHANNEL_DEVICE_RAIN_DELAY_HOURS = "rainDelayHours";
+    public static final String CHANNEL_DEVICE_ZONE_COUNT = "zoneCount";
+    public static final String CHANNEL_DEVICE_SERIAL_NUMBER = "serialNumber";
+    public static final String CHANNEL_DEVICE_MODEL = "model";
+    public static final String CHANNEL_DEVICE_MAC_ADDRESS = "macAddress";
+    public static final String CHANNEL_DEVICE_CREATED_DATE = "createdDate";
+    public static final String CHANNEL_DEVICE_UPDATED_DATE = "updatedDate";
+    public static final String CHANNEL_DEVICE_FIRMWARE_VERSION = "firmwareVersion";
+    public static final String CHANNEL_DEVICE_LAST_HEARD_FROM = "lastHeardFrom";
 
-    // Default duration for watering in seconds
-    public static final int DEFAULT_DURATION = 300;
+    // Device Control Channels
+    public static final String CHANNEL_DEVICE_STOP_WATER = "stopWater";
+    public static final String CHANNEL_DEVICE_RUN_ALL_ZONES = "runAllZones";
+    public static final String CHANNEL_DEVICE_RUN_NEXT_ZONE = "runNextZone";
+    public static final String CHANNEL_DEVICE_SET_RAIN_DELAY = "setRainDelay";
+    public static final String CHANNEL_DEVICE_PAUSE = "pauseDevice";
 
-    // Supported Thing Types
-    public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS =
-            Set.of(THING_TYPE_BRIDGE, THING_TYPE_DEVICE, THING_TYPE_ZONE);
+    // Device Professional Channels
+    public static final String CHANNEL_DEVICE_FORECAST = "forecast";
+    public static final String CHANNEL_DEVICE_WATER_USAGE = "waterUsage";
+    public static final String CHANNEL_DEVICE_WATER_SAVINGS = "waterSavings";
+    public static final String CHANNEL_DEVICE_ALERTS = "alerts";
+    public static final String CHANNEL_DEVICE_WEATHER_INTEL = "weatherIntel";
+    public static final String CHANNEL_DEVICE_SCHEDULE_STATUS = "scheduleStatus";
 
-    // Webhook event types - USING STRING NAMES (your current approach)
-    public static final String WEBHOOK_EVENT_ZONE_STARTED = "ZONE_STARTED";
-    public static final String WEBHOOK_EVENT_ZONE_STOPPED = "ZONE_STOPPED";
-    public static final String WEBHOOK_EVENT_ZONE_COMPLETED = "ZONE_COMPLETED";
-    public static final String WEBHOOK_EVENT_RAIN_DELAY = "RAIN_DELAY";
-    public static final String WEBHOOK_EVENT_DEVICE_STATUS = "DEVICE_STATUS";
-    
-    // ===== WEBHOOK EVENT TYPE IDs (from Rachio API) =====
-    // These are the actual IDs that Rachio API expects
-    public static final String WEBHOOK_EVENT_ID_DEVICE_STATUS = "5";
-    public static final String WEBHOOK_EVENT_ID_RAIN_DELAY = "6";
-    public static final String WEBHOOK_EVENT_ID_WEATHER_INTELLIGENCE = "7";
-    public static final String WEBHOOK_EVENT_ID_WATER_BUDGET = "8";
-    public static final String WEBHOOK_EVENT_ID_SCHEDULE_STATUS = "9";
-    public static final String WEBHOOK_EVENT_ID_ZONE_STATUS = "10";
-    public static final String WEBHOOK_EVENT_ID_RAIN_SENSOR_DETECTION = "11";
-    public static final String WEBHOOK_EVENT_ID_ZONE_DELTA = "12";
-    public static final String WEBHOOK_EVENT_ID_DELTA = "14";
+    // Zone Basic Channels
+    public static final String CHANNEL_ZONE_NAME = "zoneName";
+    public static final String CHANNEL_ZONE_ENABLED = "zoneEnabled";
+    public static final String CHANNEL_ZONE_RUNTIME = "zoneRuntime";
+    public static final String CHANNEL_ZONE_STATUS = "zoneStatus";
+    public static final String CHANNEL_ZONE_LAST_RUN = "zoneLastRun";
+    public static final String CHANNEL_ZONE_START = "zoneStart";
+    public static final String CHANNEL_ZONE_STOP = "zoneStop";
+    public static final String CHANNEL_ZONE_WATER_BUDGET = "waterBudget";
+    public static final String CHANNEL_ZONE_AVAILABLE_WATER = "availableWater";
 
-    // API endpoints - FIXED TO PREVENT DOUBLE "public" IN PATH
-    public static final String RACHIO_API_BASE = "https://api.rach.io/1";
-    
-    // Person endpoints
-    public static final String API_PERSON_INFO = "/public/person/info";
-    public static final String API_PERSON_BY_ID = "/public/person/";
-    
-    // Device endpoints
-    public static final String API_DEVICE = "/public/device/";
-    public static final String API_DEVICE_STOP = "/public/device/stop";
-    public static final String API_RUN_ALL_ZONES = "/public/device/runAllZones";
-    public static final String API_RUN_NEXT_ZONE = "/public/device/runNextZone";
-    public static final String API_RAIN_DELAY = "/public/device/rainDelay";
-    
-    // Zone endpoints
-    public static final String API_ZONE = "/public/zone/";
-    public static final String API_ZONE_START = "/public/zone/start";
-    public static final String API_ZONE_ENABLE = "/public/zone/enable";
-    
-    // ===== WEBHOOK API ENDPOINTS (CORRECTED) =====
-    // Based on current Rachio API documentation
-    public static final String API_WEBHOOK_BASE = "/public/notification";
-    public static final String API_WEBHOOK_LIST = "/public/notification/{deviceId}/webhook";
-    public static final String API_WEBHOOK_REGISTER = "/public/notification/webhook";
-    public static final String API_WEBHOOK_DELETE = "/public/notification/webhook/{webhookId}";
-    
-    // HTTP Methods - ADDED FOR COMPLETENESS
-    public static final String HTTP_METHOD_GET = "GET";
-    public static final String HTTP_METHOD_PUT = "PUT";
-    public static final String HTTP_METHOD_POST = "POST";
-    public static final String HTTP_METHOD_DELETE = "DELETE";
+    // Zone Professional Data Channels - ADDED
+    public static final String CHANNEL_ZONE_SOIL_TYPE = "soilType";
+    public static final String CHANNEL_ZONE_CROP_TYPE = "cropType";
+    public static final String CHANNEL_ZONE_CROP_COEFFICIENT = "cropCoefficient";
+    public static final String CHANNEL_ZONE_NOZZLE_TYPE = "nozzleType";
+    public static final String CHANNEL_ZONE_NOZZLE_RATE = "nozzleRate";
+    public static final String CHANNEL_ZONE_SLOPE_TYPE = "slopeType";
+    public static final String CHANNEL_ZONE_SHADE_TYPE = "shadeType";
+    public static final String CHANNEL_ZONE_ROOT_DEPTH = "rootDepth";
+    public static final String CHANNEL_ZONE_EFFICIENCY = "efficiency";
+    public static final String CHANNEL_ZONE_AREA = "area";
 
-    // HTTP Timeout - ADDED FOR COMPLETENESS
-    public static final int HTTP_TIMEOUT = 10000; // 10 seconds
+    // Zone Water Adjustment Runtimes (levels 1-5) - ADDED
+    public static final String CHANNEL_ZONE_WATER_ADJUSTMENT = "wateringAdjustment%d";
 
-    // Rate limiting constants
-    public static final int RATE_LIMIT_REQUESTS_PER_HOUR = 1500;
-    public static final int MIN_POLLING_INTERVAL = 90; // seconds
-    public static final int DEFAULT_POLLING_INTERVAL = 120; // seconds
-    public static final int MAX_RUNTIME_SECONDS = 10800; // 3 hours
-    public static final int MAX_RAIN_DELAY_HOURS = 168; // 1 week
+    // Channel Type UIDs - ADDED
+    public static final ChannelTypeUID CHANNEL_TYPE_UID_STRING = new ChannelTypeUID(BINDING_ID, "string");
+    public static final ChannelTypeUID CHANNEL_TYPE_UID_NUMBER = new ChannelTypeUID(BINDING_ID, "number");
+    public static final ChannelTypeUID CHANNEL_TYPE_UID_SWITCH = new ChannelTypeUID(BINDING_ID, "switch");
+    public static final ChannelTypeUID CHANNEL_TYPE_UID_DATETIME = new ChannelTypeUID(BINDING_ID, "datetime");
+    public static final ChannelTypeUID CHANNEL_TYPE_UID_CONTACT = new ChannelTypeUID(BINDING_ID, "contact");
+    public static final ChannelTypeUID CHANNEL_TYPE_UID_DIMMER = new ChannelTypeUID(BINDING_ID, "dimmer");
 
-    // AWS IP range constants
-    public static final String AWS_IPADDR_DOWNLOAD_URL = "https://ip-ranges.amazonaws.com/ip-ranges.json";
-    public static final String AWS_IPADDR_REGION_FILTER = "us-";
+    // Channel Group IDs
+    public static final String CHANNEL_GROUP_BASIC = "basic";
+    public static final String CHANNEL_GROUP_CONTROL = "control";
+    public static final String CHANNEL_GROUP_STATUS = "status";
+    public static final String CHANNEL_GROUP_PROFESSIONAL = "professional";
+    public static final String CHANNEL_GROUP_MONITORING = "monitoring";
+    public static final String CHANNEL_GROUP_WEBHOOK = "webhook";
 
-    // Rate limit related constants
-    public static final String CHANNEL_RATE_LIMIT_REMAINING = "bridge#rateLimitRemaining";
-    public static final String CHANNEL_RATE_LIMIT_PERCENT = "bridge#rateLimitPercent";
-    public static final String CHANNEL_RATE_LIMIT_STATUS = "bridge#rateLimitStatus";
-    public static final String CHANNEL_RATE_LIMIT_RESET = "bridge#rateLimitReset";
+    // List of all Thing Type UIDs
+    public static final ThingTypeUID[] SUPPORTED_THING_TYPES = {
+            THING_TYPE_BRIDGE,
+            THING_TYPE_DEVICE,
+            THING_TYPE_ZONE
+    };
 
-    // Rate limiting thresholds (percentages)
-    public static final int RATE_LIMIT_WARNING_THRESHOLD = 10; // 10%
-    public static final int RATE_LIMIT_CRITICAL_THRESHOLD = 2; // 2%
+    // List of all Bridge Thing Type UIDs
+    public static final ThingTypeUID[] SUPPORTED_BRIDGE_THING_TYPES = {
+            THING_TYPE_BRIDGE
+    };
 
-    // Adaptive polling multipliers
-    public static final double ADAPTIVE_POLLING_NORMAL = 1.0;
-    public static final double ADAPTIVE_POLLING_WARNING = 2.0;
-    public static final double ADAPTIVE_POLLING_CRITICAL = 3.0;
+    // Discovery Properties
+    public static final String DISCOVERY_DEVICE_ID = "deviceId";
+    public static final String DISCOVERY_DEVICE_NAME = "deviceName";
+    public static final String DISCOVERY_ZONE_ID = "zoneId";
+    public static final String DISCOVERY_ZONE_NAME = "zoneName";
+    public static final String DISCOVERY_ZONE_NUMBER = "zoneNumber";
 
-    // Rate limit defaults
-    public static final int RATE_LIMIT_DEFAULT_LIMIT = 1700; // Rachio hourly limit
+    // Webhook Constants
+    public static final String WEBHOOK_PATH = "/rachio/webhook";
+    public static final int WEBHOOK_DEFAULT_PORT = 8080;
+    public static final String WEBHOOK_EVENT_TYPE = "eventType";
+    public static final String WEBHOOK_DEVICE_ID = "deviceId";
+    public static final String WEBHOOK_ZONE_ID = "zoneId";
+    public static final String WEBHOOK_SIGNATURE = "x-signature";
+
+    // Webhook Event Types
+    public static final String EVENT_ZONE_STATUS = "ZONE_STATUS";
+    public static final String EVENT_DEVICE_STATUS = "DEVICE_STATUS";
+    public static final String EVENT_RAIN_DELAY = "RAIN_DELAY";
+    public static final String EVENT_WEATHER_INTEL = "WEATHER_INTEL";
+    public static final String EVENT_WATER_BUDGET = "WATER_BUDGET";
+    public static final String EVENT_SCHEDULE_STATUS = "SCHEDULE_STATUS";
+    public static final String EVENT_RAIN_SENSOR = "RAIN_SENSOR";
+    public static final String EVENT_DEVICE_ALERT = "DEVICE_ALERT";
+    public static final String EVENT_SCHEDULE_COMPLETE = "SCHEDULE_COMPLETE";
+
+    // API Constants
+    public static final String API_BASE_URL = "https://api.rach.io/1/public";
+    public static final int API_RATE_LIMIT_DAILY = 1700;
+    public static final String API_HEADER_RATE_LIMIT_TOTAL = "X-RateLimit-Limit";
+    public static final String API_HEADER_RATE_LIMIT_REMAINING = "X-RateLimit-Remaining";
+    public static final String API_HEADER_RATE_LIMIT_RESET = "X-RateLimit-Reset";
+
+    // Thing Properties
+    public static final String PROPERTY_DEVICE_ID = "deviceId";
+    public static final String PROPERTY_DEVICE_NAME = "deviceName";
+    public static final String PROPERTY_ZONE_ID = "zoneId";
+    public static final String PROPERTY_ZONE_NAME = "zoneName";
+    public static final String PROPERTY_ZONE_NUMBER = "zoneNumber";
+    public static final String PROPERTY_SERIAL_NUMBER = "serialNumber";
+    public static final String PROPERTY_MODEL = "model";
+    public static final String PROPERTY_MAC_ADDRESS = "macAddress";
+    public static final String PROPERTY_FIRMWARE_VERSION = "firmwareVersion";
+    public static final String PROPERTY_CREATED_DATE = "createdDate";
+    public static final String PROPERTY_UPDATED_DATE = "updatedDate";
+
+    // Professional Data Properties - ADDED
+    public static final String PROPERTY_SOIL_TYPE = "soilType";
+    public static final String PROPERTY_CROP_TYPE = "cropType";
+    public static final String PROPERTY_CROP_COEFFICIENT = "cropCoefficient";
+    public static final String PROPERTY_NOZZLE_TYPE = "nozzleType";
+    public static final String PROPERTY_NOZZLE_RATE = "nozzleRate";
+    public static final String PROPERTY_SLOPE_TYPE = "slopeType";
+    public static final String PROPERTY_SHADE_TYPE = "shadeType";
+    public static final String PROPERTY_ROOT_DEPTH = "rootDepth";
+    public static final String PROPERTY_EFFICIENCY = "efficiency";
+    public static final String PROPERTY_AREA = "area";
+    public static final String PROPERTY_WATER_ADJUSTMENTS = "wateringAdjustments";
+
+    // Default Values
+    public static final int DEFAULT_ZONE_RUNTIME = 600; // 10 minutes in seconds
+    public static final int DEFAULT_REFRESH_INTERVAL = 60; // 1 minute in seconds
+    public static final int DEFAULT_RAIN_DELAY_HOURS = 24;
+    public static final int MIN_ZONE_RUNTIME = 60; // 1 minute in seconds
+    public static final int MAX_ZONE_RUNTIME = 10800; // 3 hours in seconds
+    public static final int MIN_REFRESH_INTERVAL = 30; // 30 seconds
+    public static final int MAX_REFRESH_INTERVAL = 3600; // 1 hour
+
+    // Status Strings
+    public static final String STATUS_ONLINE = "ONLINE";
+    public static final String STATUS_OFFLINE = "OFFLINE";
+    public static final String STATUS_SLEEP = "SLEEP";
+    public static final String STATUS_RUNNING = "RUNNING";
+    public static final String STATUS_IDLE = "IDLE";
+    public static final String STATUS_COMPLETED = "COMPLETED";
+    public static final String STATUS_STOPPED = "STOPPED";
+    public static final String STATUS_PAUSED = "PAUSED";
+
+    // Logging Constants
+    public static final String LOGGER_API = "org.openhab.binding.rachio.api";
+    public static final String LOGGER_WEBHOOK = "org.openhab.binding.rachio.webhook";
+    public static final String LOGGER_HANDLER = "org.openhab.binding.rachio.handler";
+    public static final String LOGGER_DISCOVERY = "org.openhab.binding.rachio.discovery";
+
+    // Units
+    public static final String UNIT_SECONDS = "s";
+    public static final String UNIT_MINUTES = "min";
+    public static final String UNIT_HOURS = "h";
+    public static final String UNIT_INCHES = "in";
+    public static final String UNIT_SQUARE_FEET = "ft²";
+    public static final String UNIT_PERCENT = "%";
+    public static final String UNIT_INCHES_PER_HOUR = "in/h";
+
+    // Channel Categories
+    public static final String CATEGORY_IRRIGATION = "Irrigation";
+    public static final String CATEGORY_WATER = "Water";
+    public static final String CATEGORY_WEATHER = "Weather";
+    public static final String CATEGORY_SYSTEM = "System";
+    public static final String CATEGORY_MONITORING = "Monitoring";
+    public static final String CATEGORY_PROFESSIONAL = "Professional";
+
+    // Event Categories
+    public static final String CATEGORY_ZONE_EVENT = "ZoneEvent";
+    public static final String CATEGORY_DEVICE_EVENT = "DeviceEvent";
+    public static final String CATEGORY_WEATHER_EVENT = "WeatherEvent";
+    public static final String CATEGORY_SCHEDULE_EVENT = "ScheduleEvent";
+    public static final String CATEGORY_ALERT_EVENT = "AlertEvent";
+
+    // Configuration Descriptions
+    public static final String CONFIG_DESCRIPTION_URI_BRIDGE = "channel-type:rachio:bridge";
+    public static final String CONFIG_DESCRIPTION_URI_DEVICE = "channel-type:rachio:device";
+    public static final String CONFIG_DESCRIPTION_URI_ZONE = "channel-type:rachio:zone";
+
+    // Parameter Options
+    public static final String[] SOIL_TYPES = {
+            "Clay", "Clay Loam", "Loam", "Loamy Sand", "Sand", "Sandy Clay", "Sandy Clay Loam",
+            "Sandy Loam", "Silt", "Silt Clay", "Silt Clay Loam", "Silt Loam", "Custom"
+    };
+
+    public static final String[] CROP_TYPES = {
+            "Cool Season Grass", "Warm Season Grass", "Fruit Trees", "Flowers", "Garden",
+            "Ground Cover", "Shrubs", "Trees", "Vegetables", "Custom"
+    };
+
+    public static final String[] NOZZLE_TYPES = {
+            "Fixed Spray Head", "Rotating Stream Nozzle", "Rotary Nozzle", "Rotor", "Drip Irrigation",
+            "Bubbler", "Soaker Hose", "Impact Sprinkler", "Custom"
+    };
+
+    public static final String[] SLOPE_TYPES = {
+            "Flat (0-2%)", "Gentle (2-6%)", "Moderate (6-12%)", "Steep (12+%)", "Custom"
+    };
+
+    public static final String[] SHADE_TYPES = {
+            "Full Sun", "Partial Sun", "Partial Shade", "Full Shade", "Custom"
+    };
+
+    // Default Professional Values
+    public static final double DEFAULT_CROP_COEFFICIENT = 0.8;
+    public static final double DEFAULT_NOZZLE_RATE = 1.5; // inches per hour
+    public static final double DEFAULT_ROOT_DEPTH = 6.0; // inches
+    public static final double DEFAULT_EFFICIENCY = 0.75; // 75%
+    public static final double DEFAULT_AREA = 500.0; // square feet
+
+    // Helper method for formatting water adjustment channel IDs
+    public static String getWaterAdjustmentChannelId(int level) {
+        return String.format(CHANNEL_ZONE_WATER_ADJUSTMENT, level);
+    }
 }
