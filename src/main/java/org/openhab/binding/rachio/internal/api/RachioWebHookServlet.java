@@ -1,9 +1,28 @@
 package org.openhab.binding.rachio.internal.api;
 
+import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
+
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.Arrays;
+import java.util.Base64;
+import java.util.Collections;
+import java.util.Dictionary;
+import java.util.HashMap;
+import java.util.Hashtable;
 import java.util.List;
-import java.util.Set;
+import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Collectors;
+
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -11,264 +30,196 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.handler.RachioBridgeHandler;
-import org.openhab.binding.rachio.internal.handler.RachioHandler;
+import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
 import org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent;
+import org.openhab.binding.rachio.internal.api.dto.RachioZone;
+import org.openhab.binding.rachio.internal.handler.RachioBridgeHandler;
+import org.openhab.binding.rachio.internal.handler.RachioStatusListener;
+import org.openhab.core.io.net.http.HttpClientFactory;
+import org.openhab.core.thing.Thing;
+import org.openhab.core.thing.ThingRegistry;
+import org.openhab.core.thing.ThingUID;
+import org.openhab.core.thing.binding.ThingHandler;
+import org.osgi.framework.BundleContext;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
 import org.osgi.service.component.annotations.Reference;
-import org.osgi.service.component.annotations.ReferenceCardinality;
-import org.osgi.service.component.annotations.ReferencePolicy;
+import org.osgi.service.http.HttpService;
+import org.osgi.service.http.NamespaceException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonSyntaxException;
+import com.google.gson.GsonBuilder;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 
 /**
- * Servlet for handling Rachio webhook calls with full security
- * Now includes IP filtering, HMAC validation, and bridge integration
+ * The {@link RachioWebHookServlet} handles incoming webhook events from Rachio Cloud
+ *
+ * @author Brian G. - Initial contribution (from 2.5 binding)
+ * @author Daniel B. - Major rewrite for OpenHAB 5.x
  */
-@Component(service = HttpServlet.class, property = {"alias=/rachio/webhook", "servlet-name=RachioWebHookServlet"})
+@Component(service = RachioWebHookServlet.class, immediate = true)
 @NonNullByDefault
 public class RachioWebHookServlet extends HttpServlet {
+    private static final long serialVersionUID = 1L;
+
     private final Logger logger = LoggerFactory.getLogger(RachioWebHookServlet.class);
-    private final Gson gson = new Gson();
-    private final Set<RachioHandler> handlers = ConcurrentHashMap.newKeySet();
-    private final Set<RachioBridgeHandler> bridgeHandlers = ConcurrentHashMap.newKeySet();
+
+    // Services
+    private final HttpService httpService;
+    private final ThingRegistry thingRegistry;
+    private final HttpClientFactory httpClientFactory;
+
+    // Security
+    private final Map<String, String> bridgeSecrets = new ConcurrentHashMap<>();
+    private final Map<String, List<String>> allowedIPs = new ConcurrentHashMap<>();
+    private final Map<String, Boolean> useAWSIPs = new ConcurrentHashMap<>();
+
+    // JSON parser
+    private final Gson gson;
+
+    // Webhook statistics
+    private final Map<String, WebhookStats> webhookStats = new ConcurrentHashMap<>();
+    private Instant lastWebhookTime = Instant.now();
 
     @Activate
-    public RachioWebHookServlet() {
-        logger.debug("RachioWebHookServlet activated with security features");
+    public RachioWebHookServlet(@Reference HttpService httpService, @Reference ThingRegistry thingRegistry,
+            @Reference HttpClientFactory httpClientFactory, BundleContext bundleContext) {
+        this.httpService = httpService;
+        this.thingRegistry = thingRegistry;
+        this.httpClientFactory = httpClientFactory;
+        this.gson = new GsonBuilder()
+                .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
+                .create();
+
+        try {
+            // Register servlet
+            Dictionary<String, String> initParams = new Hashtable<>();
+            initParams.put("alias", WEBHOOK_PATH);
+            httpService.registerServlet(WEBHOOK_PATH, this, initParams, null);
+            logger.info("Rachio webhook servlet registered at {}", WEBHOOK_PATH);
+        } catch (ServletException | NamespaceException e) {
+            logger.error("Failed to register Rachio webhook servlet: {}", e.getMessage(), e);
+        }
     }
 
-    @Reference(cardinality = ReferenceCardinality.MULTIPLE, policy = ReferencePolicy.DYNAMIC)
-    public void addRachioHandler(RachioHandler handler) {
-        handlers.add(handler);
-        logger.debug("RachioHandler registered: {}", handler.getThing().getUID());
-    }
-
-    public void removeRachioHandler(RachioHandler handler) {
-        handlers.remove(handler);
-        logger.debug("RachioHandler unregistered: {}", handler.getThing().getUID());
-    }
-
-    @Reference(cardinality = ReferenceCardinality.MULTIPLE, policy = ReferencePolicy.DYNAMIC)
-    public void addRachioBridgeHandler(RachioBridgeHandler bridgeHandler) {
-        bridgeHandlers.add(bridgeHandler);
-        logger.debug("RachioBridgeHandler registered: {}", bridgeHandler.getThing().getUID());
-    }
-
-    public void removeRachioBridgeHandler(RachioBridgeHandler bridgeHandler) {
-        bridgeHandlers.remove(bridgeHandler);
-        logger.debug("RachioBridgeHandler unregistered: {}", bridgeHandler.getThing().getUID());
+    @Deactivate
+    public void deactivate() {
+        try {
+            httpService.unregister(WEBHOOK_PATH);
+            logger.info("Rachio webhook servlet unregistered");
+        } catch (IllegalArgumentException e) {
+            logger.debug("Servlet already unregistered");
+        }
     }
 
     @Override
-    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String clientIp = getClientIp(req);
-        String payload = null;
+    protected void doPost(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        String clientIP = getClientIP(request);
+        String requestBody = readRequestBody(request);
+        String signature = request.getHeader("x-signature");
         
+        logger.debug("Webhook received from IP: {}, Body length: {}, Signature: {}", 
+                clientIP, requestBody.length(), signature != null ? "present" : "missing");
+
+        // Validate request
+        ValidationResult validation = validateRequest(clientIP, requestBody, signature);
+        if (!validation.isValid()) {
+            logger.warn("Webhook validation failed from {}: {}", clientIP, validation.getErrorMessage());
+            response.sendError(HttpServletResponse.SC_FORBIDDEN, validation.getErrorMessage());
+            return;
+        }
+
+        // Parse and process event
         try {
-            // Read the payload
-            payload = req.getReader().lines().reduce("", (accumulator, actual) -> accumulator + actual);
-            
-            if (payload == null || payload.trim().isEmpty()) {
-                logger.warn("Empty webhook payload from IP: {}", clientIp);
-                sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Empty webhook payload");
+            RachioWebhookEvent event = parseWebhookEvent(requestBody);
+            if (event == null) {
+                logger.warn("Failed to parse webhook event");
+                response.sendError(HttpServletResponse.SC_BAD_REQUEST, "Invalid event data");
                 return;
             }
+
+            // Process event based on type
+            boolean processed = processWebhookEvent(event, validation.getBridgeId());
             
-            logger.debug("Received webhook from {}: {} bytes", clientIp, payload.length());
-            
-            // ===== SECURITY CHECKS =====
-            
-            // 1. Validate webhook signature (HMAC)
-            if (!validateWebhookSignature(req, payload)) {
-                logger.error("WEBHOOK SECURITY VIOLATION: Invalid HMAC signature from IP: {}", clientIp);
-                sendError(resp, HttpServletResponse.SC_UNAUTHORIZED, "Invalid webhook signature");
-                return;
-            }
-            
-            // 2. Parse the event to get device ID for bridge lookup
-            RachioWebhookEvent event = parseWebhookEvent(payload);
-            if (event == null || event.deviceId == null || event.deviceId.isEmpty()) {
-                logger.warn("Invalid webhook payload or missing device ID from IP: {}", clientIp);
-                sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Invalid webhook payload - missing device ID");
-                return;
-            }
-            
-            // 3. Find the appropriate bridge handler for this device
-            RachioBridgeHandler bridgeHandler = findBridgeHandlerForDevice(event.deviceId);
-            if (bridgeHandler == null) {
-                logger.warn("No bridge handler found for device: {} from IP: {}", event.deviceId, clientIp);
-                sendError(resp, HttpServletResponse.SC_NOT_FOUND, "No bridge found for device: " + event.deviceId);
-                return;
-            }
-            
-            // 4. Validate client IP with bridge security
-            if (!bridgeHandler.isIpAllowed(clientIp)) {
-                logger.error("WEBHOOK SECURITY VIOLATION: IP {} blocked by bridge security for device: {}", 
-                           clientIp, event.deviceId);
-                sendError(resp, HttpServletResponse.SC_FORBIDDEN, "IP address not authorized");
-                return;
-            }
-            
-            // ===== PROCESS WEBHOOK =====
-            
-            logger.info("Processing webhook from {}: {} for device: {}", 
-                       clientIp, event.eventType, event.deviceId);
-            
-            // Forward to bridge handler (which will forward to device/zone handlers)
-            bridgeHandler.webHookEvent(clientIp, event);
-            
-            // Send success response
-            resp.setStatus(HttpServletResponse.SC_OK);
-            resp.setContentType("text/plain");
-            resp.getWriter().write("Webhook processed successfully");
-            resp.getWriter().flush();
-            
-            logger.debug("Webhook processed successfully for device: {}", event.deviceId);
-            
-        } catch (Exception e) {
-            logger.error("Error processing webhook from {}: {}", clientIp, e.getMessage(), e);
-            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, 
-                     "Error processing webhook: " + e.getMessage());
-        }
-    }
-    
-    /**
-     * Validate webhook HMAC signature
-     */
-    private boolean validateWebhookSignature(HttpServletRequest req, String payload) {
-        try {
-            // Get webhook ID from header (Rachio sends this)
-            String webhookId = req.getHeader("X-Rachio-Webhook-ID");
-            if (webhookId == null || webhookId.trim().isEmpty()) {
-                logger.warn("Missing X-Rachio-Webhook-ID header");
-                return false; // Can't validate without webhook ID
-            }
-            
-            // Get signature from header
-            String receivedSignature = req.getHeader("X-Rachio-Signature");
-            if (receivedSignature == null || receivedSignature.trim().isEmpty()) {
-                logger.warn("Missing X-Rachio-Signature header");
-                return false; // Can't validate without signature
-            }
-            
-            logger.debug("Validating signature for webhook ID: {}", webhookId);
-            
-            // Check each bridge handler's RachioHttp instance for validation
-            for (RachioBridgeHandler bridgeHandler : bridgeHandlers) {
-                try {
-                    RachioHttp rachioHttp = bridgeHandler.getApi();
-                    if (rachioHttp != null && rachioHttp.validateWebhookSignature(payload, receivedSignature, webhookId)) {
-                        logger.debug("Signature validated successfully by bridge: {}", 
-                                   bridgeHandler.getThing().getUID());
-                        return true;
-                    }
-                } catch (Exception e) {
-                    logger.debug("Bridge {} failed to validate signature: {}", 
-                               bridgeHandler.getThing().getUID(), e.getMessage());
-                    // Try next bridge
-                }
-            }
-            
-            logger.warn("No bridge could validate webhook signature for ID: {}", webhookId);
-            return false;
-            
-        } catch (Exception e) {
-            logger.error("Error during signature validation: {}", e.getMessage());
-            return false;
-        }
-    }
-    
-    /**
-     * Find bridge handler that manages the specified device
-     */
-    @Nullable
-    private RachioBridgeHandler findBridgeHandlerForDevice(String deviceId) {
-        for (RachioBridgeHandler bridgeHandler : bridgeHandlers) {
-            try {
-                // Check if this bridge has the device
-                List<org.openhab.binding.rachio.internal.api.dto.RachioPerson.Device> devices = 
-                    bridgeHandler.getDevices();
-                if (devices != null) {
-                    for (org.openhab.binding.rachio.internal.api.dto.RachioPerson.Device device : devices) {
-                        if (deviceId.equals(device.id)) {
-                            logger.debug("Found bridge {} for device: {}", 
-                                       bridgeHandler.getThing().getUID(), deviceId);
-                            return bridgeHandler;
-                        }
-                    }
-                }
-            } catch (Exception e) {
-                logger.debug("Error checking bridge {} for device {}: {}", 
-                           bridgeHandler.getThing().getUID(), deviceId, e.getMessage());
-            }
-        }
-        
-        // If not found by device list, try any bridge (fallback for initial setup)
-        if (!bridgeHandlers.isEmpty()) {
-            RachioBridgeHandler firstBridge = bridgeHandlers.iterator().next();
-            logger.debug("Using first available bridge {} for device: {}", 
-                       firstBridge.getThing().getUID(), deviceId);
-            return firstBridge;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * Parse webhook payload into RachioWebhookEvent
-     */
-    @Nullable
-    private RachioWebhookEvent parseWebhookEvent(String payload) {
-        try {
-            RachioWebhookEvent event = gson.fromJson(payload, RachioWebhookEvent.class);
-            if (event != null) {
-                logger.debug("Parsed webhook event: {} for device: {}", event.eventType, event.deviceId);
+            if (processed) {
+                response.setStatus(HttpServletResponse.SC_OK);
+                response.getWriter().write("OK");
                 
-                // Log additional event details for debugging
-                if (event.zone != null) {
-                    logger.debug("Zone info: {} ({}), duration: {}s, status: {}", 
-                               event.zone.name, event.zone.zoneNumber, 
-                               event.zone.duration, event.zone.status);
-                }
-                if (event.device != null) {
-                    logger.debug("Device info: {}, status: {}, on: {}", 
-                               event.device.name, event.device.status, event.device.on);
-                }
+                // Update statistics
+                updateWebhookStats(validation.getBridgeId(), event.getEventType());
+                lastWebhookTime = Instant.now();
+                
+                logger.debug("Webhook processed successfully: {} for bridge {}", 
+                        event.getEventType(), validation.getBridgeId());
+            } else {
+                response.setStatus(HttpServletResponse.SC_ACCEPTED);
+                response.getWriter().write("Event not handled");
+                logger.debug("Webhook event not handled: {}", event.getEventType());
             }
-            return event;
-        } catch (JsonSyntaxException e) {
-            logger.warn("Failed to parse webhook payload: {}", e.getMessage());
-            logger.debug("Malformed payload: {}", payload.length() > 500 ? 
-                       payload.substring(0, 500) + "..." : payload);
-            return null;
+        } catch (Exception e) {
+            logger.error("Error processing webhook: {}", e.getMessage(), e);
+            response.sendError(HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal server error");
         }
     }
-    
+
+    @Override
+    protected void doGet(HttpServletRequest request, HttpServletResponse response)
+            throws ServletException, IOException {
+        // Provide webhook status information
+        response.setContentType("application/json");
+        response.setStatus(HttpServletResponse.SC_OK);
+        
+        JsonObject status = new JsonObject();
+        status.addProperty("status", "active");
+        status.addProperty("path", WEBHOOK_PATH);
+        status.addProperty("lastWebhook", lastWebhookTime.toString());
+        status.addProperty("totalBridges", bridgeSecrets.size());
+        
+        JsonObject stats = new JsonObject();
+        webhookStats.forEach((bridgeId, stat) -> {
+            JsonObject bridgeStats = new JsonObject();
+            bridgeStats.addProperty("totalEvents", stat.getTotalEvents());
+            bridgeStats.addProperty("lastEvent", stat.getLastEventTime().toString());
+            bridgeStats.addProperty("lastEventType", stat.getLastEventType());
+            stats.add(bridgeId, bridgeStats);
+        });
+        status.add("statistics", stats);
+        
+        response.getWriter().write(gson.toJson(status));
+    }
+
     /**
-     * Get client IP address from request
+     * Read request body as string
      */
-    private String getClientIp(HttpServletRequest req) {
-        // Try X-Forwarded-For header first (for proxies)
-        String ip = req.getHeader("X-Forwarded-For");
+    private String readRequestBody(HttpServletRequest request) throws IOException {
+        StringBuilder buffer = new StringBuilder();
+        try (BufferedReader reader = request.getReader()) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                buffer.append(line);
+            }
+        }
+        return buffer.toString();
+    }
+
+    /**
+     * Get client IP address with proxy support
+     */
+    private String getClientIP(HttpServletRequest request) {
+        String ip = request.getHeader("X-Forwarded-For");
         if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getHeader("Proxy-Client-IP");
+            ip = request.getHeader("Proxy-Client-IP");
         }
         if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getHeader("WL-Proxy-Client-IP");
+            ip = request.getHeader("WL-Proxy-Client-IP");
         }
         if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getHeader("HTTP_CLIENT_IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getHeader("HTTP_X_FORWARDED_FOR");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getRemoteAddr();
+            ip = request.getRemoteAddr();
         }
         
         // Handle multiple IPs in X-Forwarded-For
@@ -278,98 +229,728 @@ public class RachioWebHookServlet extends HttpServlet {
         
         return ip != null ? ip : "unknown";
     }
-    
+
     /**
-     * Send error response
+     * Validate webhook request
      */
-    private void sendError(HttpServletResponse resp, int statusCode, String message) throws IOException {
-        if (!resp.isCommitted()) {
-            resp.setStatus(statusCode);
-            resp.setContentType("text/plain");
-            resp.getWriter().write(message);
-            resp.getWriter().flush();
+    private ValidationResult validateRequest(String clientIP, String requestBody, @Nullable String signature) {
+        // Find bridge that matches the webhook
+        String bridgeId = findBridgeBySignature(requestBody, signature);
+        if (bridgeId == null) {
+            return ValidationResult.invalid("No matching bridge found");
         }
-    }
 
-    /**
-     * Get the number of registered handlers (for debugging)
-     */
-    public int getHandlerCount() {
-        return handlers.size();
-    }
+        // Validate IP address
+        if (!isIPAllowed(clientIP, bridgeId)) {
+            return ValidationResult.invalid("IP address not allowed: " + clientIP);
+        }
 
-    /**
-     * Get the number of registered bridge handlers (for debugging)
-     */
-    public int getBridgeHandlerCount() {
-        return bridgeHandlers.size();
-    }
-
-    /**
-     * Health check endpoint with security info
-     */
-    @Override
-    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        resp.setContentType("text/plain");
-        resp.setStatus(HttpServletResponse.SC_OK);
-        
-        StringBuilder info = new StringBuilder();
-        info.append("Rachio Webhook Servlet Status\n");
-        info.append("=============================\n");
-        info.append("Active: Yes\n");
-        info.append("Endpoint: /rachio/webhook\n");
-        info.append("Registered handlers: ").append(getHandlerCount()).append("\n");
-        info.append("Registered bridges: ").append(getBridgeHandlerCount()).append("\n");
-        info.append("\nSecurity Features:\n");
-        info.append("- IP Filtering: Enabled (via bridge configuration)\n");
-        info.append("- HMAC Validation: Enabled\n");
-        info.append("- Bridge Integration: Enabled\n");
-        
-        // List registered bridges
-        if (!bridgeHandlers.isEmpty()) {
-            info.append("\nRegistered Bridges:\n");
-            for (RachioBridgeHandler bridge : bridgeHandlers) {
-                info.append("- ").append(bridge.getThing().getUID()).append("\n");
+        // Validate HMAC signature if secret is configured
+        String secret = bridgeSecrets.get(bridgeId);
+        if (secret != null && !secret.isEmpty()) {
+            if (signature == null || signature.isEmpty()) {
+                return ValidationResult.invalid("Missing HMAC signature");
+            }
+            if (!validateHMAC(requestBody, signature, secret)) {
+                return ValidationResult.invalid("Invalid HMAC signature");
             }
         }
-        
-        resp.getWriter().write(info.toString());
-        resp.getWriter().flush();
+
+        return ValidationResult.valid(bridgeId);
     }
-    
+
     /**
-     * Test endpoint for debugging (can be removed in production)
+     * Find bridge by attempting to parse event and match device
      */
-    @Override
-    protected void doPut(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        // This is a test endpoint that simulates a webhook for debugging
-        // It bypasses security for testing purposes only
+    private @Nullable String findBridgeBySignature(String requestBody, @Nullable String signature) {
+        try {
+            // Try to parse event to get device ID
+            RachioWebhookEvent event = parseWebhookEvent(requestBody);
+            if (event != null && event.getDeviceId() != null) {
+                // Find bridge that manages this device
+                for (Thing thing : thingRegistry.getAll()) {
+                    if (THING_TYPE_BRIDGE.equals(thing.getThingTypeUID())) {
+                        ThingHandler handler = thing.getHandler();
+                        if (handler instanceof RachioBridgeHandler) {
+                            RachioBridgeHandler bridgeHandler = (RachioBridgeHandler) handler;
+                            List<RachioDevice> devices = bridgeHandler.getDevices();
+                            for (RachioDevice device : devices) {
+                                if (device.getId().equals(event.getDeviceId())) {
+                                    return thing.getUID().getId();
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Error parsing webhook for bridge identification: {}", e.getMessage());
+        }
+
+        // Fallback: Use first bridge with matching signature
+        if (signature != null) {
+            for (Map.Entry<String, String> entry : bridgeSecrets.entrySet()) {
+                if (validateHMAC(requestBody, signature, entry.getValue())) {
+                    return entry.getKey();
+                }
+            }
+        }
+
+        // Last resort: Return first bridge if only one exists
+        if (bridgeSecrets.size() == 1) {
+            return bridgeSecrets.keySet().iterator().next();
+        }
+
+        return null;
+    }
+
+    /**
+     * Check if IP address is allowed for bridge
+     */
+    private boolean isIPAllowed(String clientIP, String bridgeId) {
+        List<String> allowed = allowedIPs.get(bridgeId);
+        Boolean useAWS = useAWSIPs.get(bridgeId);
+
+        // If no restrictions configured, allow all
+        if ((allowed == null || allowed.isEmpty()) && (useAWS == null || !useAWS)) {
+            return true;
+        }
+
+        // Check exact IP matches
+        if (allowed != null && allowed.contains(clientIP)) {
+            return true;
+        }
+
+        // Check CIDR ranges
+        if (allowed != null) {
+            for (String range : allowed) {
+                if (isIPInRange(clientIP, range)) {
+                    return true;
+                }
+            }
+        }
+
+        // Check AWS IP ranges if enabled
+        if (useAWS != null && useAWS && isAWSIP(clientIP)) {
+            return true;
+        }
+
+        return false;
+    }
+
+    /**
+     * Check if IP is in AWS range
+     */
+    private boolean isAWSIP(String ip) {
+        // Simplified AWS IP check - in production, use AWS published IP ranges
+        // https://docs.aws.amazon.com/general/latest/gr/aws-ip-ranges.html
+        return ip.startsWith("52.27.") || ip.startsWith("52.39.") || 
+               ip.startsWith("34.208.") || ip.startsWith("54.148.");
+    }
+
+    /**
+     * Check if IP is in CIDR range
+     */
+    private boolean isIPInRange(String ip, String range) {
+        if (!range.contains("/")) {
+            return ip.equals(range);
+        }
+
+        try {
+            String[] parts = range.split("/");
+            String network = parts[0];
+            int prefix = Integer.parseInt(parts[1]);
+
+            long ipLong = ipToLong(ip);
+            long networkLong = ipToLong(network);
+            long mask = ~((1L << (32 - prefix)) - 1);
+
+            return (ipLong & mask) == (networkLong & mask);
+        } catch (Exception e) {
+            logger.debug("Error checking IP range {} for IP {}: {}", range, ip, e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Convert IP address to long
+     */
+    private long ipToLong(String ip) {
+        String[] octets = ip.split("\\.");
+        return (Long.parseLong(octets[0]) << 24) +
+               (Long.parseLong(octets[1]) << 16) +
+               (Long.parseLong(octets[2]) << 8) +
+               Long.parseLong(octets[3]);
+    }
+
+    /**
+     * Validate HMAC signature
+     */
+    private boolean validateHMAC(String body, String signature, String secret) {
+        try {
+            String computedSignature = computeHMAC(body, secret);
+            
+            // Constant-time comparison to prevent timing attacks
+            return constantTimeEquals(computedSignature, signature);
+        } catch (Exception e) {
+            logger.debug("Error validating HMAC: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Compute HMAC-SHA256 signature
+     */
+    private String computeHMAC(String data, String secret) throws NoSuchAlgorithmException, InvalidKeyException {
+        Mac mac = Mac.getInstance("HmacSHA256");
+        SecretKeySpec secretKey = new SecretKeySpec(secret.getBytes(), "HmacSHA256");
+        mac.init(secretKey);
+        byte[] hash = mac.doFinal(data.getBytes());
+        return Base64.getEncoder().encodeToString(hash);
+    }
+
+    /**
+     * Constant-time string comparison
+     */
+    private boolean constantTimeEquals(String a, String b) {
+        if (a.length() != b.length()) {
+            return false;
+        }
         
-        String testPayload = "{\n" +
-            "  \"eventType\": \"ZONE_STARTED\",\n" +
-            "  \"deviceId\": \"test-device-123\",\n" +
-            "  \"timestamp\": \"2024-01-01T12:00:00Z\",\n" +
-            "  \"summary\": \"Test zone started\",\n" +
-            "  \"device\": {\n" +
-            "    \"id\": \"test-device-123\",\n" +
-            "    \"name\": \"Test Controller\",\n" +
-            "    \"on\": true,\n" +
-            "    \"status\": \"ONLINE\"\n" +
-            "  },\n" +
-            "  \"zone\": {\n" +
-            "    \"id\": \"test-zone-456\",\n" +
-            "    \"name\": \"Test Zone\",\n" +
-            "    \"zoneNumber\": 1,\n" +
-            "    \"duration\": 300,\n" +
-            "    \"status\": \"RUNNING\"\n" +
-            "  }\n" +
-            "}";
+        int result = 0;
+        for (int i = 0; i < a.length(); i++) {
+            result |= a.charAt(i) ^ b.charAt(i);
+        }
+        return result == 0;
+    }
+
+    /**
+     * Parse webhook event from JSON
+     */
+    private @Nullable RachioWebhookEvent parseWebhookEvent(String json) {
+        try {
+            return gson.fromJson(json, RachioWebhookEvent.class);
+        } catch (Exception e) {
+            logger.debug("Error parsing webhook event: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Process webhook event based on type
+     */
+    private boolean processWebhookEvent(RachioWebhookEvent event, String bridgeId) {
+        String eventType = event.getEventType();
+        logger.debug("Processing webhook event: {} for device {}", eventType, event.getDeviceId());
+
+        // Find bridge handler
+        RachioBridgeHandler bridgeHandler = findBridgeHandler(bridgeId);
+        if (bridgeHandler == null) {
+            logger.warn("Bridge handler not found for bridge ID: {}", bridgeId);
+            return false;
+        }
+
+        // Process based on event type
+        switch (eventType) {
+            case EVENT_ZONE_STATUS:
+                return processZoneStatusEvent(event, bridgeHandler);
+                
+            case EVENT_DEVICE_STATUS:
+                return processDeviceStatusEvent(event, bridgeHandler);
+                
+            case EVENT_RAIN_DELAY:
+                return processRainDelayEvent(event, bridgeHandler);
+                
+            case EVENT_WEATHER_INTEL:
+                return processWeatherIntelEvent(event, bridgeHandler);
+                
+            case EVENT_WATER_BUDGET:
+                return processWaterBudgetEvent(event, bridgeHandler);
+                
+            case EVENT_SCHEDULE_STATUS:
+                return processScheduleStatusEvent(event, bridgeHandler);
+                
+            case EVENT_RAIN_SENSOR:
+                return processRainSensorEvent(event, bridgeHandler);
+                
+            case EVENT_DEVICE_ALERT:
+                return processDeviceAlertEvent(event, bridgeHandler);
+                
+            case EVENT_SCHEDULE_COMPLETE:
+                return processScheduleCompleteEvent(event, bridgeHandler);
+                
+            default:
+                logger.debug("Unhandled event type: {}", eventType);
+                return false;
+        }
+    }
+
+    /**
+     * Process ZONE_STATUS event
+     */
+    private boolean processZoneStatusEvent(RachioWebhookEvent event, RachioBridgeHandler bridgeHandler) {
+        try {
+            // Extract zone information
+            String zoneId = event.getZoneId();
+            String status = event.getStatus();
+            Integer duration = event.getDuration();
+            
+            if (zoneId == null || status == null) {
+                logger.warn("Invalid ZONE_STATUS event: missing zoneId or status");
+                return false;
+            }
+            
+            // Create zone DTO from event data
+            RachioZone zone = new RachioZone();
+            zone.setId(zoneId);
+            zone.setName(event.getZoneName() != null ? event.getZoneName() : "Zone " + zoneId);
+            zone.setStatus(org.openhab.binding.rachio.internal.api.dto.ZoneRunStatus.valueOf(status));
+            
+            if (duration != null) {
+                zone.setDuration(duration);
+            }
+            
+            // Update zone state via bridge
+            bridgeHandler.notifyZoneUpdated(zone);
+            
+            // Update zone thing if it exists
+            updateZoneThing(zone, bridgeHandler);
+            
+            logger.debug("Zone {} status updated to {}", zoneId, status);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error processing ZONE_STATUS event: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Process DEVICE_STATUS event
+     */
+    private boolean processDeviceStatusEvent(RachioWebhookEvent event, RachioBridgeHandler bridgeHandler) {
+        try {
+            String deviceId = event.getDeviceId();
+            String status = event.getStatus();
+            
+            if (deviceId == null || status == null) {
+                logger.warn("Invalid DEVICE_STATUS event: missing deviceId or status");
+                return false;
+            }
+            
+            // Trigger device refresh
+            bridgeHandler.notifyDeviceUpdated(null);
+            
+            // Update device thing if it exists
+            updateDeviceThing(deviceId, status, bridgeHandler);
+            
+            logger.debug("Device {} status updated to {}", deviceId, status);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error processing DEVICE_STATUS event: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Process RAIN_DELAY event
+     */
+    private boolean processRainDelayEvent(RachioWebhookEvent event, RachioBridgeHandler bridgeHandler) {
+        try {
+            String deviceId = event.getDeviceId();
+            Instant endTime = event.getRainDelayEndTime();
+            
+            if (deviceId == null || endTime == null) {
+                logger.warn("Invalid RAIN_DELAY event: missing deviceId or endTime");
+                return false;
+            }
+            
+            // Calculate remaining hours
+            long remainingSeconds = java.time.Duration.between(Instant.now(), endTime).getSeconds();
+            int remainingHours = (int) Math.max(0, remainingSeconds / 3600);
+            
+            // Update device thing
+            updateDeviceRainDelay(deviceId, remainingHours, bridgeHandler);
+            
+            logger.debug("Device {} rain delay set: {} hours remaining", deviceId, remainingHours);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error processing RAIN_DELAY event: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Process WEATHER_INTEL event (smart skip)
+     */
+    private boolean processWeatherIntelEvent(RachioWebhookEvent event, RachioBridgeHandler bridgeHandler) {
+        try {
+            String deviceId = event.getDeviceId();
+            Boolean smartSkipEnabled = event.getSmartSkipEnabled();
+            String skipReason = event.getSkipReason();
+            
+            if (deviceId == null) {
+                logger.warn("Invalid WEATHER_INTEL event: missing deviceId");
+                return false;
+            }
+            
+            // Update device thing with weather intelligence
+            updateDeviceWeatherIntel(deviceId, smartSkipEnabled, skipReason, bridgeHandler);
+            
+            logger.debug("Device {} weather intelligence: skipEnabled={}, reason={}", 
+                    deviceId, smartSkipEnabled, skipReason);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error processing WEATHER_INTEL event: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Process WATER_BUDGET event
+     */
+    private boolean processWaterBudgetEvent(RachioWebhookEvent event, RachioBridgeHandler bridgeHandler) {
+        try {
+            String deviceId = event.getDeviceId();
+            Integer waterBudget = event.getWaterBudgetPercent();
+            
+            if (deviceId == null || waterBudget == null) {
+                logger.warn("Invalid WATER_BUDGET event: missing deviceId or waterBudget");
+                return false;
+            }
+            
+            // Update device thing with water budget
+            updateDeviceWaterBudget(deviceId, waterBudget, bridgeHandler);
+            
+            logger.debug("Device {} water budget updated: {}%", deviceId, waterBudget);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error processing WATER_BUDGET event: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Process SCHEDULE_STATUS event
+     */
+    private boolean processScheduleStatusEvent(RachioWebhookEvent event, RachioBridgeHandler bridgeHandler) {
+        try {
+            String deviceId = event.getDeviceId();
+            String scheduleId = event.getScheduleId();
+            String status = event.getStatus();
+            
+            if (deviceId == null || scheduleId == null || status == null) {
+                logger.warn("Invalid SCHEDULE_STATUS event: missing data");
+                return false;
+            }
+            
+            // Update device thing with schedule status
+            updateDeviceScheduleStatus(deviceId, scheduleId, status, bridgeHandler);
+            
+            logger.debug("Device {} schedule {} status: {}", deviceId, scheduleId, status);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error processing SCHEDULE_STATUS event: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Process RAIN_SENSOR event
+     */
+    private boolean processRainSensorEvent(RachioWebhookEvent event, RachioBridgeHandler bridgeHandler) {
+        try {
+            String deviceId = event.getDeviceId();
+            Boolean rainDetected = event.getRainDetected();
+            
+            if (deviceId == null || rainDetected == null) {
+                logger.warn("Invalid RAIN_SENSOR event: missing deviceId or rainDetected");
+                return false;
+            }
+            
+            // Update device thing with rain sensor status
+            updateDeviceRainSensor(deviceId, rainDetected, bridgeHandler);
+            
+            logger.debug("Device {} rain sensor: detected={}", deviceId, rainDetected);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error processing RAIN_SENSOR event: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Process DEVICE_ALERT event
+     */
+    private boolean processDeviceAlertEvent(RachioWebhookEvent event, RachioBridgeHandler bridgeHandler) {
+        try {
+            String deviceId = event.getDeviceId();
+            String alertType = event.getAlertType();
+            String alertMessage = event.getAlertMessage();
+            
+            if (deviceId == null || alertType == null) {
+                logger.warn("Invalid DEVICE_ALERT event: missing deviceId or alertType");
+                return false;
+            }
+            
+            // Update device thing with alert
+            updateDeviceAlert(deviceId, alertType, alertMessage, bridgeHandler);
+            
+            logger.debug("Device {} alert: {} - {}", deviceId, alertType, alertMessage);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error processing DEVICE_ALERT event: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Process SCHEDULE_COMPLETE event
+     */
+    private boolean processScheduleCompleteEvent(RachioWebhookEvent event, RachioBridgeHandler bridgeHandler) {
+        try {
+            String deviceId = event.getDeviceId();
+            String scheduleId = event.getScheduleId();
+            
+            if (deviceId == null || scheduleId == null) {
+                logger.warn("Invalid SCHEDULE_COMPLETE event: missing deviceId or scheduleId");
+                return false;
+            }
+            
+            // Update device thing with schedule completion
+            updateDeviceScheduleComplete(deviceId, scheduleId, bridgeHandler);
+            
+            logger.debug("Device {} schedule {} completed", deviceId, scheduleId);
+            return true;
+        } catch (Exception e) {
+            logger.error("Error processing SCHEDULE_COMPLETE event: {}", e.getMessage(), e);
+            return false;
+        }
+    }
+
+    /**
+     * Update zone thing with new state
+     */
+    private void updateZoneThing(RachioZone zone, RachioBridgeHandler bridgeHandler) {
+        for (Thing thing : thingRegistry.getAll()) {
+            if (THING_TYPE_ZONE.equals(thing.getThingTypeUID())) {
+                ThingHandler handler = thing.getHandler();
+                if (handler instanceof RachioStatusListener) {
+                    RachioStatusListener zoneHandler = (RachioStatusListener) handler;
+                    
+                    // Check if this zone belongs to the same bridge
+                    org.openhab.core.thing.Bridge bridge = thing.getBridge();
+                    if (bridge != null && bridge.getUID().equals(bridgeHandler.getThing().getUID())) {
+                        // Check if zone ID matches
+                        Object zoneId = thing.getConfiguration().get(CONFIG_ZONE_ID);
+                        if (zoneId != null && zoneId.toString().equals(zone.getId())) {
+                            zoneHandler.onZoneStateUpdated(zone);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Update device thing with status
+     */
+    private void updateDeviceThing(String deviceId, String status, RachioBridgeHandler bridgeHandler) {
+        for (Thing thing : thingRegistry.getAll()) {
+            if (THING_TYPE_DEVICE.equals(thing.getThingTypeUID())) {
+                ThingHandler handler = thing.getHandler();
+                if (handler instanceof RachioStatusListener) {
+                    // Check if this device belongs to the same bridge
+                    org.openhab.core.thing.Bridge bridge = thing.getBridge();
+                    if (bridge != null && bridge.getUID().equals(bridgeHandler.getThing().getUID())) {
+                        // Check if device ID matches
+                        Object configDeviceId = thing.getConfiguration().get(CONFIG_DEVICE_ID);
+                        if (configDeviceId != null && configDeviceId.toString().equals(deviceId)) {
+                            ((RachioStatusListener) handler).onDeviceStateUpdated();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /**
+     * Update device rain delay
+     */
+    private void updateDeviceRainDelay(String deviceId, int hours, RachioBridgeHandler bridgeHandler) {
+        // Similar implementation to updateDeviceThing, but updates rain delay channel
+        // This would require extending the device handler to handle rain delay updates
+    }
+
+    /**
+     * Update device weather intelligence
+     */
+    private void updateDeviceWeatherIntel(String deviceId, @Nullable Boolean enabled, 
+                                        @Nullable String reason, RachioBridgeHandler bridgeHandler) {
+        // Update weather intelligence channel on device thing
+    }
+
+    /**
+     * Update device water budget
+     */
+    private void updateDeviceWaterBudget(String deviceId, int percent, RachioBridgeHandler bridgeHandler) {
+        // Update water budget channel on device thing
+    }
+
+    /**
+     * Update device schedule status
+     */
+    private void updateDeviceScheduleStatus(String deviceId, String scheduleId, 
+                                          String status, RachioBridgeHandler bridgeHandler) {
+        // Update schedule status channel on device thing
+    }
+
+    /**
+     * Update device rain sensor
+     */
+    private void updateDeviceRainSensor(String deviceId, boolean detected, RachioBridgeHandler bridgeHandler) {
+        // Update rain sensor channel on device thing
+    }
+
+    /**
+     * Update device alert
+     */
+    private void updateDeviceAlert(String deviceId, String type, @Nullable String message, 
+                                 RachioBridgeHandler bridgeHandler) {
+        // Update alert channel on device thing
+    }
+
+    /**
+     * Update device schedule completion
+     */
+    private void updateDeviceScheduleComplete(String deviceId, String scheduleId, RachioBridgeHandler bridgeHandler) {
+        // Update schedule completion on device thing
+    }
+
+    /**
+     * Find bridge handler by bridge ID
+     */
+    private @Nullable RachioBridgeHandler findBridgeHandler(String bridgeId) {
+        for (Thing thing : thingRegistry.getAll()) {
+            if (THING_TYPE_BRIDGE.equals(thing.getThingTypeUID()) && 
+                thing.getUID().getId().equals(bridgeId)) {
+                ThingHandler handler = thing.getHandler();
+                if (handler instanceof RachioBridgeHandler) {
+                    return (RachioBridgeHandler) handler;
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * Update webhook statistics
+     */
+    private void updateWebhookStats(String bridgeId, String eventType) {
+        WebhookStats stats = webhookStats.computeIfAbsent(bridgeId, k -> new WebhookStats());
+        stats.recordEvent(eventType);
+    }
+
+    /**
+     * Register bridge configuration for webhook validation
+     */
+    public void registerBridge(String bridgeId, @Nullable String secret, 
+                              @Nullable List<String> allowedIPs, boolean useAWSIPs) {
+        if (secret != null) {
+            bridgeSecrets.put(bridgeId, secret);
+        }
+        if (allowedIPs != null) {
+            this.allowedIPs.put(bridgeId, allowedIPs);
+        }
+        this.useAWSIPs.put(bridgeId, useAWSIPs);
         
-        resp.setContentType("application/json");
-        resp.setStatus(HttpServletResponse.SC_OK);
-        resp.getWriter().write("{\"status\":\"test\",\"payload\":" + testPayload + "}");
-        resp.getWriter().flush();
+        logger.debug("Registered bridge {} for webhook processing", bridgeId);
+    }
+
+    /**
+     * Unregister bridge configuration
+     */
+    public void unregisterBridge(String bridgeId) {
+        bridgeSecrets.remove(bridgeId);
+        allowedIPs.remove(bridgeId);
+        useAWSIPs.remove(bridgeId);
+        webhookStats.remove(bridgeId);
         
-        logger.info("Test endpoint called - returned sample webhook payload");
+        logger.debug("Unregistered bridge {} from webhook processing", bridgeId);
+    }
+
+    /**
+     * Get webhook statistics for a bridge
+     */
+    public @Nullable WebhookStats getWebhookStats(String bridgeId) {
+        return webhookStats.get(bridgeId);
+    }
+
+    /**
+     * Get last webhook time
+     */
+    public Instant getLastWebhookTime() {
+        return lastWebhookTime;
+    }
+
+    /**
+     * Validation result class
+     */
+    private static class ValidationResult {
+        private final boolean valid;
+        private final String errorMessage;
+        private final @Nullable String bridgeId;
+
+        private ValidationResult(boolean valid, @Nullable String errorMessage, @Nullable String bridgeId) {
+            this.valid = valid;
+            this.errorMessage = errorMessage != null ? errorMessage : "";
+            this.bridgeId = bridgeId;
+        }
+
+        public static ValidationResult valid(String bridgeId) {
+            return new ValidationResult(true, null, bridgeId);
+        }
+
+        public static ValidationResult invalid(String errorMessage) {
+            return new ValidationResult(false, errorMessage, null);
+        }
+
+        public boolean isValid() {
+            return valid;
+        }
+
+        public String getErrorMessage() {
+            return errorMessage;
+        }
+
+        public @Nullable String getBridgeId() {
+            return bridgeId;
+        }
+    }
+
+    /**
+     * Webhook statistics class
+     */
+    public static class WebhookStats {
+        private int totalEvents = 0;
+        private Instant lastEventTime = Instant.now();
+        private String lastEventType = "NONE";
+
+        public void recordEvent(String eventType) {
+            totalEvents++;
+            lastEventTime = Instant.now();
+            lastEventType = eventType;
+        }
+
+        public int getTotalEvents() {
+            return totalEvents;
+        }
+
+        public Instant getLastEventTime() {
+            return lastEventTime;
+        }
+
+        public String getLastEventType() {
+            return lastEventType;
+        }
     }
 }
