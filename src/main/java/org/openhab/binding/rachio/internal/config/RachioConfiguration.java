@@ -2,214 +2,96 @@ package org.openhab.binding.rachio.internal.config;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.core.config.core.Configuration;
-
-import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
 
 /**
- * The {@link RachioConfiguration} class contains fields mapping thing configuration parameters.
+ * The {@link RachioConfiguration} class contains binding-wide configuration parameters.
  *
- * @author Markus Michels - Initial contribution
+ * @author Daniel B. - Major rewrite for OpenHAB 5.x
  */
 @NonNullByDefault
 public class RachioConfiguration {
-    
-    // Bridge configuration parameters - ALL PARAMETERS INCLUDED
-    public @Nullable String apikey;
-    public int pollingInterval = DEFAULT_POLLING_INTERVAL;
-    public int defaultRuntime = DEFAULT_DURATION;
-    
-    // Webhook configuration
-    public @Nullable String callbackUrl;
-    public boolean clearAllCallbacks = false;
-    public @Nullable String ipFilter;
+    // Binding-wide settings
+    public boolean autoDiscoveryEnabled = true;
+    public int discoveryTimeout = 30; // seconds
+    public boolean backgroundDiscovery = true;
 
-    // Thing configuration (for devices/zones)
-    public @Nullable String deviceId;
-    public @Nullable String zoneId;
-    public @Nullable String personId;
+    // Default settings for new things
+    public int defaultPollingInterval = 60; // seconds
+    public int defaultRefreshInterval = 300; // seconds
+    public boolean defaultPollingEnabled = true;
 
-    /**
-     * Update configuration from properties
-     */
-    public void updateConfig(@Nullable Configuration config) {
-        if (config != null) {
-            apikey = (String) config.get(API_KEY);
-            
-            // Polling interval with validation
-            Object pollingObj = config.get(POLLING_INTERVAL);
-            if (pollingObj != null) {
-                pollingInterval = ((Number) pollingObj).intValue();
-                if (pollingInterval < MIN_POLLING_INTERVAL) {
-                    pollingInterval = DEFAULT_POLLING_INTERVAL; // Enforce minimum for rate limiting
-                }
-            } else {
-                pollingInterval = DEFAULT_POLLING_INTERVAL; // default
-            }
-            
-            // Default runtime
-            Object runtimeObj = config.get(DEFAULT_RUNTIME);
-            if (runtimeObj != null) {
-                defaultRuntime = ((Number) runtimeObj).intValue();
-                if (defaultRuntime <= 0) {
-                    defaultRuntime = DEFAULT_DURATION;
-                }
-            } else {
-                defaultRuntime = DEFAULT_DURATION; // default
-            }
-            
-            // Webhook configuration
-            callbackUrl = (String) config.get(CALLBACK_URL);
-            
-            Object clearCallbacksObj = config.get(CLEAR_ALL_CALLBACKS);
-            if (clearCallbacksObj != null) {
-                clearAllCallbacks = (Boolean) clearCallbacksObj;
-            } else {
-                clearAllCallbacks = false; // default
-            }
-            
-            ipFilter = (String) config.get(IP_FILTER);
-            deviceId = (String) config.get(DEVICE_ID);
-            zoneId = (String) config.get(ZONE_ID);
-            personId = (String) config.get("personId"); // Note: personId is not in BindingConstants
-        }
-    }
+    // Professional features defaults
+    public boolean defaultEnableForecast = true;
+    public boolean defaultEnableWaterAnalytics = true;
+    public boolean defaultEnableSavings = true;
+    public boolean defaultEnableAlerts = true;
 
-    /**
-     * Validate configuration
-     */
-    public boolean isValid() {
-        return apikey != null && !apikey.trim().isEmpty();
-    }
+    // Security defaults
+    public boolean defaultValidateWebhooks = true;
+    public boolean defaultUseAWSIPs = false;
+    public @Nullable String defaultAllowedIPs;
 
-    /**
-     * Validate configuration for bridge
-     */
-    public boolean isValidBridgeConfig() {
-        if (!isValid()) {
-            return false;
-        }
-        
-        // Additional bridge-specific validation
-        if (pollingInterval < MIN_POLLING_INTERVAL) {
-            return false; // Rate limit safety
-        }
-        
-        if (defaultRuntime <= 0 || defaultRuntime > MAX_RUNTIME_SECONDS) {
-            return false;
-        }
-        
-        return true;
-    }
+    // Logging defaults
+    public boolean enableAPILogging = false;
+    public boolean enableWebhookLogging = true;
+    public boolean enableRateLimitLogging = true;
+    public String logLevel = "INFO";
 
-    /**
-     * Validate configuration for device
-     */
-    public boolean isValidDeviceConfig() {
-        return deviceId != null && !deviceId.trim().isEmpty();
-    }
+    // Performance settings
+    public int httpConnectionTimeout = 30; // seconds
+    public int httpReadTimeout = 30; // seconds
+    public int maxHttpConnections = 10;
+    public int connectionPoolSize = 5;
+    public boolean enableConnectionPooling = true;
 
-    /**
-     * Validate configuration for zone
-     */
-    public boolean isValidZoneConfig() {
-        return zoneId != null && !zoneId.trim().isEmpty() && 
-               deviceId != null && !deviceId.trim().isEmpty();
-    }
+    // Advanced settings
+    public boolean useCompression = true;
+    public boolean followRedirects = true;
+    public boolean validateCertificates = true;
+    public @Nullable String proxyHost;
+    public @Nullable Integer proxyPort;
+    public @Nullable String proxyUsername;
+    public @Nullable String proxyPassword;
 
-    // Getters with proper null safety
-    public @Nullable String getApiKey() {
-        return apikey;
-    }
+    // UI/UX settings
+    public boolean showProfessionalData = true;
+    public boolean groupChannelsByType = true;
+    public String defaultUnits = "imperial"; // "imperial" or "metric"
+    public boolean enableTooltips = true;
+    public boolean showAdvancedOptions = false;
 
-    public int getPollingInterval() {
-        return pollingInterval;
-    }
-
-    public int getDefaultRuntime() {
-        return defaultRuntime;
-    }
-
-    public @Nullable String getCallbackUrl() {
-        return callbackUrl;
-    }
-
-    public boolean isClearAllCallbacks() {
-        return clearAllCallbacks;
-    }
-
-    public @Nullable String getIpFilter() {
-        return ipFilter;
-    }
-
-    public @Nullable String getDeviceId() {
-        return deviceId;
-    }
-
-    public @Nullable String getZoneId() {
-        return zoneId;
-    }
-
-    public @Nullable String getPersonId() {
-        return personId;
-    }
-
-    /**
-     * Get configuration summary for logging
-     */
-    public String getConfigSummary() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("RachioConfiguration{");
-        sb.append("apikey='").append(apikey != null ? apikey.substring(0, Math.min(8, apikey.length())) + "..." : "null").append("'");
-        sb.append(", pollingInterval=").append(pollingInterval);
-        sb.append(", defaultRuntime=").append(defaultRuntime);
-        sb.append(", callbackUrl='").append(callbackUrl != null ? "configured" : "null").append("'");
-        sb.append(", clearAllCallbacks=").append(clearAllCallbacks);
-        sb.append(", ipFilter='").append(ipFilter != null ? ipFilter : "null").append("'");
-        sb.append(", deviceId='").append(deviceId != null ? deviceId : "null").append("'");
-        sb.append(", zoneId='").append(zoneId != null ? zoneId : "null").append("'");
-        sb.append(", personId='").append(personId != null ? personId : "null").append("'");
-        sb.append('}');
-        return sb.toString();
-    }
+    // Automation settings
+    public boolean enableRuleTemplates = true;
+    public boolean enableSceneSupport = true;
+    public boolean enablePresenceDetection = false;
 
     @Override
     public String toString() {
-        return getConfigSummary();
+        return "RachioConfiguration [autoDiscoveryEnabled=" + autoDiscoveryEnabled +
+                ", defaultPollingInterval=" + defaultPollingInterval +
+                ", defaultEnableForecast=" + defaultEnableForecast +
+                ", enableAPILogging=" + enableAPILogging +
+                "]";
     }
 
     /**
-     * Create configuration from individual parameters
+     * Check if proxy is configured
      */
-    public static RachioConfiguration create(String apiKey, int pollingInterval, int defaultRuntime, 
-                                           @Nullable String callbackUrl, boolean clearCallbacks, 
-                                           @Nullable String ipFilter) {
-        RachioConfiguration config = new RachioConfiguration();
-        config.apikey = apiKey;
-        config.pollingInterval = pollingInterval;
-        config.defaultRuntime = defaultRuntime;
-        config.callbackUrl = callbackUrl;
-        config.clearAllCallbacks = clearCallbacks;
-        config.ipFilter = ipFilter;
-        return config;
+    public boolean isProxyConfigured() {
+        return proxyHost != null && !proxyHost.isEmpty() && proxyPort != null && proxyPort > 0;
     }
 
     /**
-     * Create device configuration
+     * Get proxy settings as a string
      */
-    public static RachioConfiguration createDeviceConfig(String deviceId) {
-        RachioConfiguration config = new RachioConfiguration();
-        config.deviceId = deviceId;
-        return config;
-    }
-
-    /**
-     * Create zone configuration
-     */
-    public static RachioConfiguration createZoneConfig(String deviceId, String zoneId) {
-        RachioConfiguration config = new RachioConfiguration();
-        config.deviceId = deviceId;
-        config.zoneId = zoneId;
-        return config;
+    public String getProxyString() {
+        if (!isProxyConfigured()) {
+            return "";
+        }
+        String auth = "";
+        if (proxyUsername != null && !proxyUsername.isEmpty()) {
+            auth = proxyUsername + ":" + (proxyPassword != null ? proxyPassword : "") + "@";
+        }
+        return "http://" + auth + proxyHost + ":" + proxyPort;
     }
 }
