@@ -1,45 +1,88 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.eclipse.jdt.annotation.Nullable;
+import com.google.gson.annotations.SerializedName;
 
 /**
- * DTO for Rachio Custom Slope Configuration
- *
- * @author Daniel B. - Professional irrigation data
+ * DTO for Slope Type from Rachio API
+ * Based on Rachio professional irrigation data
+ * 
+ * @author Dave Boyett - Initial contribution
  */
 @NonNullByDefault
 public class CustomSlope {
-    private String id = "";
-    private String name = "";
-    private @Nullable Double percentage; // 0-100%
+    // Slope identification
+    @SerializedName("id")
+    public String id;
     
-    public String getId() {
-        return id;
+    @SerializedName("name")
+    public String name;
+    
+    @SerializedName("custom")
+    public boolean custom;
+    
+    // Slope characteristics
+    @SerializedName("grade")
+    public double grade; // percentage slope (0-100)
+    
+    @SerializedName("angle")
+    public double angle; // degrees
+    
+    @SerializedName("runoffFactor")
+    public double runoffFactor; // 0-1 (1 = high runoff)
+    
+    @SerializedName("infiltrationReduction")
+    public double infiltrationReduction; // percentage reduction
+    
+    // Helper methods
+    
+    /**
+     * Get slope summary
+     */
+    public String getSummary() {
+        return String.format("%s (%.1f%% grade)", name, grade);
     }
     
-    public void setId(String id) {
-        this.id = id;
+    /**
+     * Check if this is a custom slope type
+     */
+    public boolean isCustom() {
+        return custom;
     }
     
-    public String getName() {
-        return name;
+    /**
+     * Check if slope requires cycle and soak
+     */
+    public boolean requiresCycleSoak() {
+        return grade > 10.0; // More than 10% slope
     }
     
-    public void setName(String name) {
-        this.name = name;
+    /**
+     * Get adjusted infiltration rate
+     */
+    public double getAdjustedInfiltrationRate(double baseRate) {
+        return baseRate * (1.0 - (infiltrationReduction / 100.0));
     }
     
-    public @Nullable Double getPercentage() {
-        return percentage;
+    /**
+     * Get slope properties map
+     */
+    public java.util.Map<String, Object> getProperties() {
+        java.util.Map<String, Object> props = new java.util.HashMap<>();
+        props.put("id", id);
+        props.put("name", name);
+        props.put("custom", custom);
+        props.put("grade", grade);
+        props.put("angle", angle);
+        props.put("runoffFactor", runoffFactor);
+        props.put("infiltrationReduction", infiltrationReduction);
+        return props;
     }
     
-    public void setPercentage(@Nullable Double percentage) {
-        this.percentage = percentage;
-    }
-    
-    @Override
-    public String toString() {
-        return "CustomSlope{id='" + id + "', name='" + name + "', percentage=" + percentage + "}";
-    }
+    // Common slope type constants
+    public static final String NAME_FLAT = "Flat";
+    public static final String NAME_GENTLE = "Gentle";
+    public static final String NAME_MODERATE = "Moderate";
+    public static final String NAME_STEEP = "Steep";
+    public static final String NAME_VERY_STEEP = "Very Steep";
 }
