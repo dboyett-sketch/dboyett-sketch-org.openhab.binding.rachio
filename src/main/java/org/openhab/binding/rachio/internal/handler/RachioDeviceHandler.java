@@ -52,7 +52,7 @@ import com.google.gson.JsonParser;
  * The {@link RachioDeviceHandler} is responsible for handling commands for device things
  *
  * @author Brian G. - Initial contribution (from 2.5 binding)
- * @author Daniel B. - Major rewrite for OpenHAB 5.x
+ * @author Daniel B. - Major rewrite for OpenHAB 5.x with professional features
  */
 @Component(service = RachioDeviceHandler.class, configurationPid = "handler.rachio.device")
 @NonNullByDefault
@@ -69,9 +69,9 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
     private @Nullable ScheduledFuture<?> pollingJob;
     private @Nullable ScheduledFuture<?> forecastJob;
     private @Nullable ScheduledFuture<?> analyticsJob;
-    private static final int POLLING_INTERVAL = 120; // 2 minutes
-    private static final int FORECAST_INTERVAL = 3600; // 1 hour
-    private static final int ANALYTICS_INTERVAL = 7200; // 2 hours
+    private static final int DEFAULT_POLLING_INTERVAL = 120; // 2 minutes
+    private static final int DEFAULT_FORECAST_INTERVAL = 3600; // 1 hour
+    private static final int DEFAULT_ANALYTICS_INTERVAL = 7200; // 2 hours
 
     // State tracking
     private @Nullable RachioDevice lastDeviceState;
@@ -116,12 +116,22 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         // Create professional channels
         createProfessionalChannels();
 
-        // Start background jobs
+        // Start background jobs based on configuration
         startPolling();
-        startForecastUpdates();
-        startAnalyticsUpdates();
+        
+        if (config.monitorForecast) {
+            startForecastUpdates();
+        }
+        
+        if (config.monitorWaterUsage || config.monitorSavings || config.monitorAlerts) {
+            startAnalyticsUpdates();
+        }
+
+        // Initial state update
+        scheduler.execute(this::pollDeviceState);
 
         updateStatus(ThingStatus.ONLINE);
+        logger.info("Device handler initialized for device {}", config.deviceId);
     }
 
     @Override
@@ -137,6 +147,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         }
 
         super.dispose();
+        logger.debug("Device handler disposed for {}", getThing().getUID());
     }
 
     /**
@@ -153,6 +164,13 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
     }
 
     /**
+     * Get API access through bridge
+     */
+    private @Nullable RachioBridgeHandler getBridgeApi() {
+        return getBridgeHandler();
+    }
+
+    /**
      * Create dynamic channels for professional features
      */
     private void createProfessionalChannels() {
@@ -160,35 +178,41 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
 
         // Control Channels
         createControlChannel(CHANNEL_DEVICE_STOP_WATER, CHANNEL_TYPE_UID_SWITCH,
-                "Stop Watering", "Immediately stop all watering", "switch");
+                "Stop Watering", "Immediately stop all watering", "switch", CATEGORY_IRRIGATION);
+        
         createControlChannel(CHANNEL_DEVICE_RUN_ALL_ZONES, CHANNEL_TYPE_UID_NUMBER,
-                "Run All Zones", "Run all zones for specified duration (seconds)", "number:time");
+                "Run All Zones", "Run all zones for specified duration (seconds)", "number:time", CATEGORY_IRRIGATION);
+        
         createControlChannel(CHANNEL_DEVICE_RUN_NEXT_ZONE, CHANNEL_TYPE_UID_NUMBER,
-                "Run Next Zone", "Run next available zone (seconds)", "number:time");
+                "Run Next Zone", "Run next available zone (seconds)", "number:time", CATEGORY_IRRIGATION);
+        
         createControlChannel(CHANNEL_DEVICE_SET_RAIN_DELAY, CHANNEL_TYPE_UID_NUMBER,
-                "Set Rain Delay", "Set rain delay in hours", "number:time");
+                "Set Rain Delay", "Set rain delay in hours (0-72)", "number", CATEGORY_WEATHER);
+        
         createControlChannel(CHANNEL_DEVICE_PAUSE, CHANNEL_TYPE_UID_SWITCH,
-                "Pause Device", "Pause/resume device operation", "switch");
+                "Pause Device", "Pause/resume all device operations", "switch", CATEGORY_SYSTEM);
 
         // Weather & Forecast Channels
         createReadOnlyChannel(CHANNEL_DEVICE_FORECAST, CHANNEL_TYPE_UID_STRING,
-                "Weather Forecast", "Current weather forecast summary", "text");
+                "Weather Forecast", "Current weather forecast summary", "text", CATEGORY_WEATHER);
+        
         createReadOnlyChannel(CHANNEL_DEVICE_WEATHER_INTEL, CHANNEL_TYPE_UID_STRING,
-                "Weather Intel", "Smart watering intelligence status", "text");
+                "Weather Intelligence", "Smart skip weather intelligence status", "text", CATEGORY_WEATHER);
 
         // Water Analytics Channels
         createReadOnlyChannel(CHANNEL_DEVICE_WATER_USAGE, CHANNEL_TYPE_UID_STRING,
-                "Water Usage", "Water usage analytics", "text");
+                "Water Usage", "Water usage analytics", "text", CATEGORY_WATER);
+        
         createReadOnlyChannel(CHANNEL_DEVICE_WATER_SAVINGS, CHANNEL_TYPE_UID_STRING,
-                "Water Savings", "Water savings analytics", "text");
+                "Water Savings", "Water savings analytics", "text", CATEGORY_WATER);
 
         // Alert Channels
         createReadOnlyChannel(CHANNEL_DEVICE_ALERTS, CHANNEL_TYPE_UID_STRING,
-                "Device Alerts", "Active device alerts", "text");
+                "Device Alerts", "Active device alerts", "text", CATEGORY_SYSTEM);
 
         // Schedule Channels
         createReadOnlyChannel(CHANNEL_DEVICE_SCHEDULE_STATUS, CHANNEL_TYPE_UID_STRING,
-                "Schedule Status", "Current schedule execution status", "text");
+                "Schedule Status", "Current schedule execution status", "text", CATEGORY_IRRIGATION);
 
         logger.debug("Professional channels created for device {}", config != null ? config.deviceId : "unknown");
     }
@@ -197,7 +221,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
      * Create a read-only channel
      */
     private void createReadOnlyChannel(String channelId, ChannelTypeUID channelTypeUID,
-            String label, String description, String itemType) {
+            String label, String description, String itemType, String category) {
         ChannelUID uid = new ChannelUID(getThing().getUID(), channelId);
 
         if (getThing().getChannel(uid) != null) {
@@ -208,6 +232,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
                 .withType(channelTypeUID)
                 .withLabel(label)
                 .withDescription(description)
+                .withCategory(category)
                 .build();
 
         updateThing(editThing().withChannel(channel).build());
@@ -217,7 +242,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
      * Create a control channel
      */
     private void createControlChannel(String channelId, ChannelTypeUID channelTypeUID,
-            String label, String description, String itemType) {
+            String label, String description, String itemType, String category) {
         ChannelUID uid = new ChannelUID(getThing().getUID(), channelId);
 
         if (getThing().getChannel(uid) != null) {
@@ -228,6 +253,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
                 .withType(channelTypeUID)
                 .withLabel(label)
                 .withDescription(description)
+                .withCategory(category)
                 .build();
 
         updateThing(editThing().withChannel(channel).build());
@@ -239,8 +265,9 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
     private void startPolling() {
         ScheduledFuture<?> job = pollingJob;
         if (job == null || job.isCancelled()) {
-            pollingJob = scheduler.scheduleWithFixedDelay(this::pollDeviceState, 10, POLLING_INTERVAL, TimeUnit.SECONDS);
-            logger.debug("Started device polling for {}", config != null ? config.deviceId : "unknown");
+            int interval = config != null && config.pollingInterval > 0 ? config.pollingInterval : DEFAULT_POLLING_INTERVAL;
+            pollingJob = scheduler.scheduleWithFixedDelay(this::pollDeviceState, 10, interval, TimeUnit.SECONDS);
+            logger.debug("Started device polling with {} second interval", interval);
         }
     }
 
@@ -262,8 +289,9 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
     private void startForecastUpdates() {
         ScheduledFuture<?> job = forecastJob;
         if (job == null || job.isCancelled()) {
-            forecastJob = scheduler.scheduleWithFixedDelay(this::updateForecast, 30, FORECAST_INTERVAL, TimeUnit.SECONDS);
-            logger.debug("Started forecast updates");
+            int interval = config != null && config.forecastUpdateInterval > 0 ? config.forecastUpdateInterval : DEFAULT_FORECAST_INTERVAL;
+            forecastJob = scheduler.scheduleWithFixedDelay(this::updateForecast, 30, interval, TimeUnit.SECONDS);
+            logger.debug("Started forecast updates with {} second interval", interval);
         }
     }
 
@@ -285,8 +313,9 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
     private void startAnalyticsUpdates() {
         ScheduledFuture<?> job = analyticsJob;
         if (job == null || job.isCancelled()) {
-            analyticsJob = scheduler.scheduleWithFixedDelay(this::updateAnalytics, 60, ANALYTICS_INTERVAL, TimeUnit.SECONDS);
-            logger.debug("Started analytics updates");
+            int interval = config != null && config.waterUsageUpdateInterval > 0 ? config.waterUsageUpdateInterval : DEFAULT_ANALYTICS_INTERVAL;
+            analyticsJob = scheduler.scheduleWithFixedDelay(this::updateAnalytics, 60, interval, TimeUnit.SECONDS);
+            logger.debug("Started analytics updates with {} second interval", interval);
         }
     }
 
@@ -306,7 +335,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
      * Poll device state from bridge
      */
     private void pollDeviceState() {
-        RachioBridgeHandler bridge = getBridgeHandler();
+        RachioBridgeHandler bridge = getBridgeApi();
         RachioDeviceConfiguration localConfig = config;
 
         if (bridge == null || localConfig == null) {
@@ -326,11 +355,15 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
                 updateDeviceState(device);
                 lastDeviceState = device;
                 lastUpdate = ZonedDateTime.now();
+                updateStatus(ThingStatus.ONLINE);
             } else {
                 logger.warn("Device {} not found in bridge", localConfig.deviceId);
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
+                        "Device not found in bridge");
             }
         } catch (Exception e) {
             logger.debug("Error polling device state: {}", e.getMessage(), e);
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
     }
 
@@ -338,10 +371,10 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
      * Update forecast data
      */
     private void updateForecast() {
-        RachioBridgeHandler bridge = getBridgeHandler();
+        RachioBridgeHandler bridge = getBridgeApi();
         RachioDeviceConfiguration localConfig = config;
 
-        if (bridge == null || localConfig == null) {
+        if (bridge == null || localConfig == null || !localConfig.monitorForecast) {
             return;
         }
 
@@ -354,6 +387,8 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
             }
         } catch (RachioApiException e) {
             logger.debug("Error updating forecast: {}", e.getMessage());
+        } catch (Exception e) {
+            logger.warn("Unexpected error updating forecast: {}", e.getMessage(), e);
         }
     }
 
@@ -361,7 +396,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
      * Update analytics data (water usage and savings)
      */
     private void updateAnalytics() {
-        RachioBridgeHandler bridge = getBridgeHandler();
+        RachioBridgeHandler bridge = getBridgeApi();
         RachioDeviceConfiguration localConfig = config;
 
         if (bridge == null || localConfig == null) {
@@ -369,30 +404,38 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         }
 
         try {
-            // Update water usage
-            JsonObject waterUsage = bridge.getDeviceWaterUsage(localConfig.deviceId);
-            if (waterUsage != null) {
-                lastWaterUsage = waterUsage;
-                updateWaterUsageChannels(waterUsage);
+            // Update water usage if enabled
+            if (localConfig.monitorWaterUsage) {
+                JsonObject waterUsage = bridge.getDeviceWaterUsage(localConfig.deviceId);
+                if (waterUsage != null) {
+                    lastWaterUsage = waterUsage;
+                    updateWaterUsageChannels(waterUsage);
+                }
             }
 
-            // Update savings
-            JsonObject savings = bridge.getDeviceSavings(localConfig.deviceId);
-            if (savings != null) {
-                lastSavings = savings;
-                updateSavingsChannels(savings);
+            // Update savings if enabled
+            if (localConfig.monitorSavings) {
+                JsonObject savings = bridge.getDeviceSavings(localConfig.deviceId);
+                if (savings != null) {
+                    lastSavings = savings;
+                    updateSavingsChannels(savings);
+                }
             }
 
-            // Update alerts
-            JsonArray alerts = bridge.getDeviceAlerts(localConfig.deviceId);
-            if (alerts != null) {
-                lastAlerts = alerts;
-                updateAlertChannels(alerts);
+            // Update alerts if enabled
+            if (localConfig.monitorAlerts) {
+                JsonArray alerts = bridge.getDeviceAlerts(localConfig.deviceId);
+                if (alerts != null) {
+                    lastAlerts = alerts;
+                    updateAlertChannels(alerts);
+                }
             }
 
             logger.debug("Updated analytics for device {}", localConfig.deviceId);
         } catch (RachioApiException e) {
             logger.debug("Error updating analytics: {}", e.getMessage());
+        } catch (Exception e) {
+            logger.warn("Unexpected error updating analytics: {}", e.getMessage(), e);
         }
     }
 
@@ -413,6 +456,10 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         updateState(CHANNEL_DEVICE_SERIAL_NUMBER, new StringType(device.getSerialNumber()));
         updateState(CHANNEL_DEVICE_MODEL, new StringType(device.getModel()));
         updateState(CHANNEL_DEVICE_MAC_ADDRESS, new StringType(device.getMacAddress()));
+        
+        if (device.getFirmwareVersion() != null && !device.getFirmwareVersion().isEmpty()) {
+            updateState(CHANNEL_DEVICE_FIRMWARE_VERSION, new StringType(device.getFirmwareVersion()));
+        }
         
         if (device.getCreatedDate() != null) {
             updateState(CHANNEL_DEVICE_CREATED_DATE, new DateTimeType(device.getCreatedDate()));
@@ -442,8 +489,9 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         devicePaused = device.isPaused();
         updateState(CHANNEL_DEVICE_PAUSED, devicePaused ? OnOffType.ON : OnOffType.OFF);
 
-        logger.debug("Device {} state updated: name={}, online={}, zones={}, rainDelay={}h",
-                device.getId(), device.getName(), device.isOnline(), device.getZones().size(), rainDelayHours);
+        logger.debug("Device {} state updated: name={}, online={}, zones={}, rainDelay={}h, paused={}",
+                device.getId(), device.getName(), device.isOnline(), device.getZones().size(), 
+                rainDelayHours, device.isPaused());
     }
 
     /**
@@ -560,7 +608,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        RachioBridgeHandler bridge = getBridgeHandler();
+        RachioBridgeHandler bridge = getBridgeApi();
         RachioDeviceConfiguration localConfig = config;
 
         if (bridge == null || localConfig == null) {
@@ -590,6 +638,11 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
                 case CHANNEL_DEVICE_RUN_ALL_ZONES:
                     if (command instanceof DecimalType) {
                         int duration = ((DecimalType) command).intValue();
+                        // Ensure duration is within bounds
+                        int minRuntime = localConfig.minZoneRuntime > 0 ? localConfig.minZoneRuntime : MIN_ZONE_RUNTIME;
+                        int maxRuntime = localConfig.maxZoneRuntime > 0 ? localConfig.maxZoneRuntime : MAX_ZONE_RUNTIME;
+                        duration = Math.max(minRuntime, Math.min(duration, maxRuntime));
+                        
                         bridge.runAllZones(getThing().getUID().getId(), duration, localConfig.deviceId);
                     }
                     break;
@@ -597,6 +650,11 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
                 case CHANNEL_DEVICE_RUN_NEXT_ZONE:
                     if (command instanceof DecimalType) {
                         int duration = ((DecimalType) command).intValue();
+                        // Ensure duration is within bounds
+                        int minRuntime = localConfig.minZoneRuntime > 0 ? localConfig.minZoneRuntime : MIN_ZONE_RUNTIME;
+                        int maxRuntime = localConfig.maxZoneRuntime > 0 ? localConfig.maxZoneRuntime : MAX_ZONE_RUNTIME;
+                        duration = Math.max(minRuntime, Math.min(duration, maxRuntime));
+                        
                         bridge.runNextZone(getThing().getUID().getId(), duration, localConfig.deviceId);
                     }
                     break;
@@ -604,8 +662,12 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
                 case CHANNEL_DEVICE_SET_RAIN_DELAY:
                     if (command instanceof DecimalType) {
                         int hours = ((DecimalType) command).intValue();
+                        // Limit to 0-72 hours
+                        hours = Math.max(0, Math.min(hours, 72));
+                        
                         bridge.rainDelay(getThing().getUID().getId(), hours, localConfig.deviceId);
-                        // Update local state
+                        
+                        // Update local state immediately
                         rainDelayHours = hours;
                         updateState(CHANNEL_DEVICE_RAIN_DELAY, new QuantityType<>(hours, Units.HOUR));
                         updateState(CHANNEL_DEVICE_RAIN_DELAY_HOURS, new DecimalType(hours));
@@ -616,6 +678,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
                     if (command instanceof OnOffType) {
                         boolean pause = command == OnOffType.ON;
                         bridge.pauseDevice(getThing().getUID().getId(), pause, localConfig.deviceId);
+                        
                         // Update local state
                         devicePaused = pause;
                         updateState(CHANNEL_DEVICE_PAUSED, pause ? OnOffType.ON : OnOffType.OFF);
@@ -642,8 +705,17 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         if (status == ThingStatus.ONLINE) {
             updateStatus(ThingStatus.ONLINE);
             startPolling();
-            startForecastUpdates();
-            startAnalyticsUpdates();
+            
+            if (config != null && config.monitorForecast) {
+                startForecastUpdates();
+            }
+            
+            if (config != null && (config.monitorWaterUsage || config.monitorSavings || config.monitorAlerts)) {
+                startAnalyticsUpdates();
+            }
+            
+            // Refresh state when bridge comes online
+            scheduler.execute(this::pollDeviceState);
         } else {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
             stopPolling();
