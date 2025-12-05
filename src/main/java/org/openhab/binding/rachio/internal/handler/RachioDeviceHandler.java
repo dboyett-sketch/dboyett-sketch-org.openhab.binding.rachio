@@ -2,10 +2,8 @@ package org.openhab.binding.rachio.internal.handler;
 
 import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
 
-import java.math.BigDecimal;
 import java.time.ZonedDateTime;
-import java.util.Collection;
-import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
@@ -13,779 +11,433 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.api.RachioApiException;
 import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
 import org.openhab.binding.rachio.internal.api.dto.RachioZone;
 import org.openhab.binding.rachio.internal.config.RachioDeviceConfiguration;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
-import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.StringType;
-import org.openhab.core.library.unit.ImperialUnits;
-import org.openhab.core.library.unit.Units;
+import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Channel;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.binding.BaseThingHandler;
-import org.openhab.core.thing.binding.ThingHandlerService;
 import org.openhab.core.thing.binding.builder.ChannelBuilder;
 import org.openhab.core.thing.type.ChannelTypeUID;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
 import org.openhab.core.types.State;
-import org.osgi.service.component.annotations.Activate;
-import org.osgi.service.component.annotations.Component;
-import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonArray;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
-
 /**
- * The {@link RachioDeviceHandler} is responsible for handling commands for device things
+ * The {@link RachioDeviceHandler} is responsible for handling commands and status
+ * updates for Rachio Controller Devices.
  *
- * @author Brian G. - Initial contribution (from 2.5 binding)
- * @author Daniel B. - Major rewrite for OpenHAB 5.x with professional features
+ * @author Dave Boyett - Initial contribution
  */
-@Component(service = RachioDeviceHandler.class, configurationPid = "handler.rachio.device")
 @NonNullByDefault
 public class RachioDeviceHandler extends BaseThingHandler implements RachioStatusListener {
+
     private final Logger logger = LoggerFactory.getLogger(RachioDeviceHandler.class);
 
-    // Configuration
     private @Nullable RachioDeviceConfiguration config;
-
-    // Bridge Handler
-    private @Nullable RachioBridgeHandler bridgeHandler;
-
-    // Scheduling
+    private @Nullable RachioDevice deviceData;
     private @Nullable ScheduledFuture<?> pollingJob;
-    private @Nullable ScheduledFuture<?> forecastJob;
-    private @Nullable ScheduledFuture<?> analyticsJob;
-    private static final int DEFAULT_POLLING_INTERVAL = 120; // 2 minutes
-    private static final int DEFAULT_FORECAST_INTERVAL = 3600; // 1 hour
-    private static final int DEFAULT_ANALYTICS_INTERVAL = 7200; // 2 hours
+    
+    private int pollInterval = 120; // 2 minutes default
+    private ZonedDateTime lastUpdated;
+    private boolean deviceOnline = false;
 
-    // State tracking
-    private @Nullable RachioDevice lastDeviceState;
-    private @Nullable ZonedDateTime lastUpdate;
-    private @Nullable JsonObject lastForecast;
-    private @Nullable JsonObject lastWaterUsage;
-    private @Nullable JsonObject lastSavings;
-    private @Nullable JsonArray lastAlerts;
-    private int rainDelayHours = 0;
-    private boolean devicePaused = false;
-
-    // JSON parser
-    private final Gson gson;
-
-    @Activate
     public RachioDeviceHandler(Thing thing) {
         super(thing);
-        this.gson = new GsonBuilder().setPrettyPrinting().create();
-    }
-
-    @Override
-    public void initialize() {
-        logger.debug("Initializing Rachio device handler for {}", getThing().getUID());
-
-        config = getConfigAs(RachioDeviceConfiguration.class);
-        if (config == null || config.deviceId.isEmpty()) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "Device ID not configured");
-            return;
-        }
-
-        // Get bridge handler
-        RachioBridgeHandler bridge = getBridgeHandler();
-        if (bridge == null) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "Bridge not found");
-            return;
-        }
-
-        // Register with bridge
-        bridge.registerStatusListener(this);
-
-        // Create professional channels
-        createProfessionalChannels();
-
-        // Start background jobs based on configuration
-        startPolling();
-        
-        if (config.monitorForecast) {
-            startForecastUpdates();
-        }
-        
-        if (config.monitorWaterUsage || config.monitorSavings || config.monitorAlerts) {
-            startAnalyticsUpdates();
-        }
-
-        // Initial state update
-        scheduler.execute(this::pollDeviceState);
-
-        updateStatus(ThingStatus.ONLINE);
-        logger.info("Device handler initialized for device {}", config.deviceId);
-    }
-
-    @Override
-    public void dispose() {
-        stopPolling();
-        stopForecastUpdates();
-        stopAnalyticsUpdates();
-
-        // Unregister from bridge
-        RachioBridgeHandler bridge = getBridgeHandler();
-        if (bridge != null) {
-            bridge.unregisterStatusListener(this);
-        }
-
-        super.dispose();
-        logger.debug("Device handler disposed for {}", getThing().getUID());
-    }
-
-    /**
-     * Get the bridge handler
-     */
-    private @Nullable RachioBridgeHandler getBridgeHandler() {
-        if (bridgeHandler == null) {
-            org.openhab.core.thing.Bridge bridge = getBridge();
-            if (bridge != null) {
-                bridgeHandler = (RachioBridgeHandler) bridge.getHandler();
-            }
-        }
-        return bridgeHandler;
-    }
-
-    /**
-     * Get API access through bridge
-     */
-    private @Nullable RachioBridgeHandler getBridgeApi() {
-        return getBridgeHandler();
-    }
-
-    /**
-     * Create dynamic channels for professional features
-     */
-    private void createProfessionalChannels() {
-        logger.debug("Creating professional channels for device {}", config != null ? config.deviceId : "unknown");
-
-        // Control Channels
-        createControlChannel(CHANNEL_DEVICE_STOP_WATER, CHANNEL_TYPE_UID_SWITCH,
-                "Stop Watering", "Immediately stop all watering", "switch", CATEGORY_IRRIGATION);
-        
-        createControlChannel(CHANNEL_DEVICE_RUN_ALL_ZONES, CHANNEL_TYPE_UID_NUMBER,
-                "Run All Zones", "Run all zones for specified duration (seconds)", "number:time", CATEGORY_IRRIGATION);
-        
-        createControlChannel(CHANNEL_DEVICE_RUN_NEXT_ZONE, CHANNEL_TYPE_UID_NUMBER,
-                "Run Next Zone", "Run next available zone (seconds)", "number:time", CATEGORY_IRRIGATION);
-        
-        createControlChannel(CHANNEL_DEVICE_SET_RAIN_DELAY, CHANNEL_TYPE_UID_NUMBER,
-                "Set Rain Delay", "Set rain delay in hours (0-72)", "number", CATEGORY_WEATHER);
-        
-        createControlChannel(CHANNEL_DEVICE_PAUSE, CHANNEL_TYPE_UID_SWITCH,
-                "Pause Device", "Pause/resume all device operations", "switch", CATEGORY_SYSTEM);
-
-        // Weather & Forecast Channels
-        createReadOnlyChannel(CHANNEL_DEVICE_FORECAST, CHANNEL_TYPE_UID_STRING,
-                "Weather Forecast", "Current weather forecast summary", "text", CATEGORY_WEATHER);
-        
-        createReadOnlyChannel(CHANNEL_DEVICE_WEATHER_INTEL, CHANNEL_TYPE_UID_STRING,
-                "Weather Intelligence", "Smart skip weather intelligence status", "text", CATEGORY_WEATHER);
-
-        // Water Analytics Channels
-        createReadOnlyChannel(CHANNEL_DEVICE_WATER_USAGE, CHANNEL_TYPE_UID_STRING,
-                "Water Usage", "Water usage analytics", "text", CATEGORY_WATER);
-        
-        createReadOnlyChannel(CHANNEL_DEVICE_WATER_SAVINGS, CHANNEL_TYPE_UID_STRING,
-                "Water Savings", "Water savings analytics", "text", CATEGORY_WATER);
-
-        // Alert Channels
-        createReadOnlyChannel(CHANNEL_DEVICE_ALERTS, CHANNEL_TYPE_UID_STRING,
-                "Device Alerts", "Active device alerts", "text", CATEGORY_SYSTEM);
-
-        // Schedule Channels
-        createReadOnlyChannel(CHANNEL_DEVICE_SCHEDULE_STATUS, CHANNEL_TYPE_UID_STRING,
-                "Schedule Status", "Current schedule execution status", "text", CATEGORY_IRRIGATION);
-
-        logger.debug("Professional channels created for device {}", config != null ? config.deviceId : "unknown");
-    }
-
-    /**
-     * Create a read-only channel
-     */
-    private void createReadOnlyChannel(String channelId, ChannelTypeUID channelTypeUID,
-            String label, String description, String itemType, String category) {
-        ChannelUID uid = new ChannelUID(getThing().getUID(), channelId);
-
-        if (getThing().getChannel(uid) != null) {
-            return;
-        }
-
-        Channel channel = ChannelBuilder.create(uid, itemType)
-                .withType(channelTypeUID)
-                .withLabel(label)
-                .withDescription(description)
-                .withCategory(category)
-                .build();
-
-        updateThing(editThing().withChannel(channel).build());
-    }
-
-    /**
-     * Create a control channel
-     */
-    private void createControlChannel(String channelId, ChannelTypeUID channelTypeUID,
-            String label, String description, String itemType, String category) {
-        ChannelUID uid = new ChannelUID(getThing().getUID(), channelId);
-
-        if (getThing().getChannel(uid) != null) {
-            return;
-        }
-
-        Channel channel = ChannelBuilder.create(uid, itemType)
-                .withType(channelTypeUID)
-                .withLabel(label)
-                .withDescription(description)
-                .withCategory(category)
-                .build();
-
-        updateThing(editThing().withChannel(channel).build());
-    }
-
-    /**
-     * Start polling for device updates
-     */
-    private void startPolling() {
-        ScheduledFuture<?> job = pollingJob;
-        if (job == null || job.isCancelled()) {
-            int interval = config != null && config.pollingInterval > 0 ? config.pollingInterval : DEFAULT_POLLING_INTERVAL;
-            pollingJob = scheduler.scheduleWithFixedDelay(this::pollDeviceState, 10, interval, TimeUnit.SECONDS);
-            logger.debug("Started device polling with {} second interval", interval);
-        }
-    }
-
-    /**
-     * Stop polling
-     */
-    private void stopPolling() {
-        ScheduledFuture<?> job = pollingJob;
-        if (job != null && !job.isCancelled()) {
-            job.cancel(true);
-            pollingJob = null;
-            logger.debug("Stopped device polling");
-        }
-    }
-
-    /**
-     * Start forecast updates
-     */
-    private void startForecastUpdates() {
-        ScheduledFuture<?> job = forecastJob;
-        if (job == null || job.isCancelled()) {
-            int interval = config != null && config.forecastUpdateInterval > 0 ? config.forecastUpdateInterval : DEFAULT_FORECAST_INTERVAL;
-            forecastJob = scheduler.scheduleWithFixedDelay(this::updateForecast, 30, interval, TimeUnit.SECONDS);
-            logger.debug("Started forecast updates with {} second interval", interval);
-        }
-    }
-
-    /**
-     * Stop forecast updates
-     */
-    private void stopForecastUpdates() {
-        ScheduledFuture<?> job = forecastJob;
-        if (job != null && !job.isCancelled()) {
-            job.cancel(true);
-            forecastJob = null;
-            logger.debug("Stopped forecast updates");
-        }
-    }
-
-    /**
-     * Start analytics updates
-     */
-    private void startAnalyticsUpdates() {
-        ScheduledFuture<?> job = analyticsJob;
-        if (job == null || job.isCancelled()) {
-            int interval = config != null && config.waterUsageUpdateInterval > 0 ? config.waterUsageUpdateInterval : DEFAULT_ANALYTICS_INTERVAL;
-            analyticsJob = scheduler.scheduleWithFixedDelay(this::updateAnalytics, 60, interval, TimeUnit.SECONDS);
-            logger.debug("Started analytics updates with {} second interval", interval);
-        }
-    }
-
-    /**
-     * Stop analytics updates
-     */
-    private void stopAnalyticsUpdates() {
-        ScheduledFuture<?> job = analyticsJob;
-        if (job != null && !job.isCancelled()) {
-            job.cancel(true);
-            analyticsJob = null;
-            logger.debug("Stopped analytics updates");
-        }
-    }
-
-    /**
-     * Poll device state from bridge
-     */
-    private void pollDeviceState() {
-        RachioBridgeHandler bridge = getBridgeApi();
-        RachioDeviceConfiguration localConfig = config;
-
-        if (bridge == null || localConfig == null) {
-            logger.debug("Cannot poll device state: bridge or config missing");
-            return;
-        }
-
-        try {
-            // Get device from bridge
-            List<RachioDevice> devices = bridge.getDevices();
-            RachioDevice device = devices.stream()
-                    .filter(d -> d.getId().equals(localConfig.deviceId))
-                    .findFirst()
-                    .orElse(null);
-
-            if (device != null) {
-                updateDeviceState(device);
-                lastDeviceState = device;
-                lastUpdate = ZonedDateTime.now();
-                updateStatus(ThingStatus.ONLINE);
-            } else {
-                logger.warn("Device {} not found in bridge", localConfig.deviceId);
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                        "Device not found in bridge");
-            }
-        } catch (Exception e) {
-            logger.debug("Error polling device state: {}", e.getMessage(), e);
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
-        }
-    }
-
-    /**
-     * Update forecast data
-     */
-    private void updateForecast() {
-        RachioBridgeHandler bridge = getBridgeApi();
-        RachioDeviceConfiguration localConfig = config;
-
-        if (bridge == null || localConfig == null || !localConfig.monitorForecast) {
-            return;
-        }
-
-        try {
-            JsonObject forecast = bridge.getDeviceForecast(localConfig.deviceId);
-            if (forecast != null) {
-                lastForecast = forecast;
-                updateForecastChannels(forecast);
-                logger.debug("Updated forecast for device {}", localConfig.deviceId);
-            }
-        } catch (RachioApiException e) {
-            logger.debug("Error updating forecast: {}", e.getMessage());
-        } catch (Exception e) {
-            logger.warn("Unexpected error updating forecast: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Update analytics data (water usage and savings)
-     */
-    private void updateAnalytics() {
-        RachioBridgeHandler bridge = getBridgeApi();
-        RachioDeviceConfiguration localConfig = config;
-
-        if (bridge == null || localConfig == null) {
-            return;
-        }
-
-        try {
-            // Update water usage if enabled
-            if (localConfig.monitorWaterUsage) {
-                JsonObject waterUsage = bridge.getDeviceWaterUsage(localConfig.deviceId);
-                if (waterUsage != null) {
-                    lastWaterUsage = waterUsage;
-                    updateWaterUsageChannels(waterUsage);
-                }
-            }
-
-            // Update savings if enabled
-            if (localConfig.monitorSavings) {
-                JsonObject savings = bridge.getDeviceSavings(localConfig.deviceId);
-                if (savings != null) {
-                    lastSavings = savings;
-                    updateSavingsChannels(savings);
-                }
-            }
-
-            // Update alerts if enabled
-            if (localConfig.monitorAlerts) {
-                JsonArray alerts = bridge.getDeviceAlerts(localConfig.deviceId);
-                if (alerts != null) {
-                    lastAlerts = alerts;
-                    updateAlertChannels(alerts);
-                }
-            }
-
-            logger.debug("Updated analytics for device {}", localConfig.deviceId);
-        } catch (RachioApiException e) {
-            logger.debug("Error updating analytics: {}", e.getMessage());
-        } catch (Exception e) {
-            logger.warn("Unexpected error updating analytics: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Update all device channels with current state
-     */
-    protected void updateDeviceState(RachioDevice device) {
-        logger.trace("Updating device state for {}: {}", device.getId(), device.getName());
-
-        // Basic device information
-        updateState(CHANNEL_DEVICE_NAME, new StringType(device.getName()));
-        updateState(CHANNEL_DEVICE_ONLINE, device.isOnline() ? OnOffType.ON : OnOffType.OFF);
-        updateState(CHANNEL_DEVICE_PAUSED, device.isPaused() ? OnOffType.ON : OnOffType.OFF);
-        updateState(CHANNEL_DEVICE_STATUS, new StringType(device.getStatus()));
-
-        // Device properties
-        updateState(CHANNEL_DEVICE_ZONE_COUNT, new DecimalType(device.getZones().size()));
-        updateState(CHANNEL_DEVICE_SERIAL_NUMBER, new StringType(device.getSerialNumber()));
-        updateState(CHANNEL_DEVICE_MODEL, new StringType(device.getModel()));
-        updateState(CHANNEL_DEVICE_MAC_ADDRESS, new StringType(device.getMacAddress()));
-        
-        if (device.getFirmwareVersion() != null && !device.getFirmwareVersion().isEmpty()) {
-            updateState(CHANNEL_DEVICE_FIRMWARE_VERSION, new StringType(device.getFirmwareVersion()));
-        }
-        
-        if (device.getCreatedDate() != null) {
-            updateState(CHANNEL_DEVICE_CREATED_DATE, new DateTimeType(device.getCreatedDate()));
-        }
-        
-        if (device.getUpdatedDate() != null) {
-            updateState(CHANNEL_DEVICE_UPDATED_DATE, new DateTimeType(device.getUpdatedDate()));
-        }
-        
-        if (device.getLastHeardFrom() != null) {
-            updateState(CHANNEL_DEVICE_LAST_HEARD_FROM, new DateTimeType(device.getLastHeardFrom()));
-        }
-
-        // Rain delay
-        if (device.getRainDelayExpirationDate() != null) {
-            long remainingSeconds = java.time.Duration.between(ZonedDateTime.now(), device.getRainDelayExpirationDate()).getSeconds();
-            rainDelayHours = (int) Math.max(0, remainingSeconds / 3600);
-            updateState(CHANNEL_DEVICE_RAIN_DELAY, new QuantityType<>(rainDelayHours, Units.HOUR));
-            updateState(CHANNEL_DEVICE_RAIN_DELAY_HOURS, new DecimalType(rainDelayHours));
-        } else {
-            rainDelayHours = 0;
-            updateState(CHANNEL_DEVICE_RAIN_DELAY, new QuantityType<>(0, Units.HOUR));
-            updateState(CHANNEL_DEVICE_RAIN_DELAY_HOURS, new DecimalType(0));
-        }
-
-        // Update device paused state
-        devicePaused = device.isPaused();
-        updateState(CHANNEL_DEVICE_PAUSED, devicePaused ? OnOffType.ON : OnOffType.OFF);
-
-        logger.debug("Device {} state updated: name={}, online={}, zones={}, rainDelay={}h, paused={}",
-                device.getId(), device.getName(), device.isOnline(), device.getZones().size(), 
-                rainDelayHours, device.isPaused());
-    }
-
-    /**
-     * Update forecast channels
-     */
-    private void updateForecastChannels(JsonObject forecast) {
-        if (forecast.has("summary") && forecast.get("summary").isJsonObject()) {
-            JsonObject summary = forecast.getAsJsonObject("summary");
-            if (summary.has("condition") && summary.has("temperature") && summary.has("precipitation")) {
-                String condition = summary.get("condition").getAsString();
-                double temperature = summary.get("temperature").getAsDouble();
-                double precipitation = summary.get("precipitation").getAsDouble();
-                
-                String forecastText = String.format("%s, %.0f°F, %.2f\" rain", condition, temperature, precipitation);
-                updateState(CHANNEL_DEVICE_FORECAST, new StringType(forecastText));
-            }
-        }
-
-        // Weather intelligence (smart skip)
-        if (forecast.has("weatherIntel") && forecast.get("weatherIntel").isJsonObject()) {
-            JsonObject weatherIntel = forecast.getAsJsonObject("weatherIntel");
-            if (weatherIntel.has("status")) {
-                String status = weatherIntel.get("status").getAsString();
-                updateState(CHANNEL_DEVICE_WEATHER_INTEL, new StringType(status));
-            }
-        }
-    }
-
-    /**
-     * Update water usage channels
-     */
-    private void updateWaterUsageChannels(JsonObject waterUsage) {
-        StringBuilder usageText = new StringBuilder();
-        
-        if (waterUsage.has("total") && waterUsage.get("total").isJsonObject()) {
-            JsonObject total = waterUsage.getAsJsonObject("total");
-            if (total.has("gallons") && total.has("cost")) {
-                double gallons = total.get("gallons").getAsDouble();
-                double cost = total.get("cost").getAsDouble();
-                usageText.append(String.format("Total: %.0f gal ($%.2f)", gallons, cost));
-            }
-        }
-        
-        if (waterUsage.has("average") && waterUsage.get("average").isJsonObject()) {
-            JsonObject average = waterUsage.getAsJsonObject("average");
-            if (average.has("gallons") && average.has("cost")) {
-                double gallons = average.get("gallons").getAsDouble();
-                double cost = average.get("cost").getAsDouble();
-                if (usageText.length() > 0) {
-                    usageText.append(" | ");
-                }
-                usageText.append(String.format("Avg: %.0f gal ($%.2f)", gallons, cost));
-            }
-        }
-
-        if (usageText.length() > 0) {
-            updateState(CHANNEL_DEVICE_WATER_USAGE, new StringType(usageText.toString()));
-        }
-    }
-
-    /**
-     * Update savings channels
-     */
-    private void updateSavingsChannels(JsonObject savings) {
-        StringBuilder savingsText = new StringBuilder();
-        
-        if (savings.has("total") && savings.get("total").isJsonObject()) {
-            JsonObject total = savings.getAsJsonObject("total");
-            if (total.has("gallons") && total.has("cost")) {
-                double gallons = total.get("gallons").getAsDouble();
-                double cost = total.get("cost").getAsDouble();
-                savingsText.append(String.format("Total: %.0f gal ($%.2f)", gallons, cost));
-            }
-        }
-        
-        if (savings.has("percentage") && savings.has("comparedTo")) {
-            double percentage = savings.get("percentage").getAsDouble();
-            String comparedTo = savings.get("comparedTo").getAsString();
-            if (savingsText.length() > 0) {
-                savingsText.append(" | ");
-            }
-            savingsText.append(String.format("%.1f%% vs %s", percentage, comparedTo));
-        }
-
-        if (savingsText.length() > 0) {
-            updateState(CHANNEL_DEVICE_WATER_SAVINGS, new StringType(savingsText.toString()));
-        }
-    }
-
-    /**
-     * Update alert channels
-     */
-    private void updateAlertChannels(JsonArray alerts) {
-        if (alerts.size() == 0) {
-            updateState(CHANNEL_DEVICE_ALERTS, new StringType("No active alerts"));
-            return;
-        }
-
-        StringBuilder alertsText = new StringBuilder();
-        for (int i = 0; i < Math.min(alerts.size(), 3); i++) { // Show max 3 alerts
-            JsonObject alert = alerts.get(i).getAsJsonObject();
-            if (alert.has("type") && alert.has("message")) {
-                if (alertsText.length() > 0) {
-                    alertsText.append("; ");
-                }
-                alertsText.append(alert.get("message").getAsString());
-            }
-        }
-
-        if (alertsText.length() > 0) {
-            updateState(CHANNEL_DEVICE_ALERTS, new StringType(alertsText.toString()));
-        }
     }
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        RachioBridgeHandler bridge = getBridgeApi();
-        RachioDeviceConfiguration localConfig = config;
-
-        if (bridge == null || localConfig == null) {
-            logger.warn("Cannot handle command: bridge or config missing");
-            return;
-        }
-
         if (command instanceof RefreshType) {
-            // Refresh device state
-            scheduler.execute(this::pollDeviceState);
+            refreshDeviceData();
             return;
         }
 
+        // Device channels are mostly read-only, but can handle some commands
         String channelId = channelUID.getIdWithoutGroup();
-        logger.debug("Handling command {} for channel {} on device {}", command, channelId, localConfig.deviceId);
+        
+        switch (channelId) {
+            case CHANNEL_DEVICE_ONLINE:
+                if (command instanceof OnOffType) {
+                    // This is a status channel, not a control channel
+                    logger.debug("Device online status is read-only");
+                }
+                break;
+                
+            case CHANNEL_STATUS:
+                if (command instanceof RefreshType) {
+                    refreshDeviceData();
+                }
+                break;
+        }
+    }
 
+    @Override
+    public void initialize() {
+        logger.debug("Initializing Rachio device handler");
+        
+        config = getConfigAs(RachioDeviceConfiguration.class);
+        updateStatus(ThingStatus.UNKNOWN);
+
+        Bridge bridge = getBridge();
+        if (bridge == null) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "No bridge assigned");
+            return;
+        }
+
+        RachioBridgeHandler bridgeHandler = (RachioBridgeHandler) bridge.getHandler();
+        if (bridgeHandler == null) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "Bridge handler not available");
+            return;
+        }
+
+        // Register as listener to bridge
+        bridgeHandler.registerListener(this);
+
+        // Create dynamic channels
+        createDeviceChannels();
+
+        // Start polling
+        startPolling();
+
+        // Initial refresh
+        refreshDeviceData();
+    }
+
+    private void createDeviceChannels() {
+        logger.debug("Creating device channels");
+        
+        List<Channel> channels = new ArrayList<>();
+        ChannelUID thingUID = getThing().getUID();
+
+        // Device Information Channels
+        channels.add(ChannelBuilder.create(new ChannelUID(thingUID, CHANNEL_DEVICE_NAME), "String")
+                .withType(new ChannelTypeUID(BINDING_ID, CHANNEL_DEVICE_NAME))
+                .withLabel("Device Name")
+                .withDescription("Name of the Rachio controller")
+                .build());
+
+        channels.add(ChannelBuilder.create(new ChannelUID(thingUID, CHANNEL_DEVICE_STATUS), "String")
+                .withType(new ChannelTypeUID(BINDING_ID, CHANNEL_DEVICE_STATUS))
+                .withLabel("Device Status")
+                .withDescription("Current status of the device")
+                .build());
+
+        channels.add(ChannelBuilder.create(new ChannelUID(thingUID, CHANNEL_DEVICE_ONLINE), "Switch")
+                .withType(new ChannelTypeUID(BINDING_ID, CHANNEL_DEVICE_ONLINE))
+                .withLabel("Device Online")
+                .withDescription("Whether the device is online")
+                .build());
+
+        channels.add(ChannelBuilder.create(new ChannelUID(thingUID, CHANNEL_DEVICE_SERIAL), "String")
+                .withType(new ChannelTypeUID(BINDING_ID, CHANNEL_DEVICE_SERIAL))
+                .withLabel("Serial Number")
+                .withDescription("Device serial number")
+                .build());
+
+        channels.add(ChannelBuilder.create(new ChannelUID(thingUID, CHANNEL_DEVICE_MODEL), "String")
+                .withType(new ChannelTypeUID(BINDING_ID, CHANNEL_DEVICE_MODEL))
+                .withLabel("Device Model")
+                .withDescription("Device model information")
+                .build());
+
+        channels.add(ChannelBuilder.create(new ChannelUID(thingUID, CHANNEL_DEVICE_ZONE_COUNT), "Number")
+                .withType(new ChannelTypeUID(BINDING_ID, CHANNEL_DEVICE_ZONE_COUNT))
+                .withLabel("Zone Count")
+                .withDescription("Number of zones on this device")
+                .build());
+
+        channels.add(ChannelBuilder.create(new ChannelUID(thingUID, CHANNEL_DEVICE_LAST_HEARTBEAT), "DateTime")
+                .withType(new ChannelTypeUID(BINDING_ID, CHANNEL_DEVICE_LAST_HEARTBEAT))
+                .withLabel("Last Heartbeat")
+                .withDescription("When device last reported status")
+                .build());
+
+        // Device Control Channels (delegated to bridge)
+        channels.add(ChannelBuilder.create(new ChannelUID(thingUID, CHANNEL_STATUS), "String")
+                .withType(new ChannelTypeUID(BINDING_ID, CHANNEL_STATUS))
+                .withLabel("Status")
+                .withDescription("Current device status")
+                .build());
+
+        channels.add(ChannelBuilder.create(new ChannelUID(thingUID, CHANNEL_LAST_UPDATED), "DateTime")
+                .withType(new ChannelTypeUID(BINDING_ID, CHANNEL_LAST_UPDATED))
+                .withLabel("Last Updated")
+                .withDescription("When device data was last updated")
+                .build());
+
+        // Update the thing with all channels
+        updateThing(editThing().withChannels(channels).build());
+        
+        logger.debug("Created {} device channels", channels.size());
+    }
+
+    private void startPolling() {
+        ScheduledFuture<?> pollingJob = this.pollingJob;
+        if (pollingJob != null && !pollingJob.isCancelled()) {
+            pollingJob.cancel(true);
+        }
+
+        this.pollingJob = scheduler.scheduleWithFixedDelay(this::refreshDeviceData, 10, pollInterval, TimeUnit.SECONDS);
+        logger.debug("Started device polling every {} seconds", pollInterval);
+    }
+
+    private void refreshDeviceData() {
         try {
-            switch (channelId) {
-                case CHANNEL_DEVICE_STOP_WATER:
-                    if (command instanceof OnOffType && command == OnOffType.ON) {
-                        bridge.stopWatering(getThing().getUID().getId(), localConfig.deviceId);
-                        // Turn switch back off after command
-                        scheduler.schedule(() -> updateState(channelUID, OnOffType.OFF), 1, TimeUnit.SECONDS);
-                    }
-                    break;
-
-                case CHANNEL_DEVICE_RUN_ALL_ZONES:
-                    if (command instanceof DecimalType) {
-                        int duration = ((DecimalType) command).intValue();
-                        // Ensure duration is within bounds
-                        int minRuntime = localConfig.minZoneRuntime > 0 ? localConfig.minZoneRuntime : MIN_ZONE_RUNTIME;
-                        int maxRuntime = localConfig.maxZoneRuntime > 0 ? localConfig.maxZoneRuntime : MAX_ZONE_RUNTIME;
-                        duration = Math.max(minRuntime, Math.min(duration, maxRuntime));
-                        
-                        bridge.runAllZones(getThing().getUID().getId(), duration, localConfig.deviceId);
-                    }
-                    break;
-
-                case CHANNEL_DEVICE_RUN_NEXT_ZONE:
-                    if (command instanceof DecimalType) {
-                        int duration = ((DecimalType) command).intValue();
-                        // Ensure duration is within bounds
-                        int minRuntime = localConfig.minZoneRuntime > 0 ? localConfig.minZoneRuntime : MIN_ZONE_RUNTIME;
-                        int maxRuntime = localConfig.maxZoneRuntime > 0 ? localConfig.maxZoneRuntime : MAX_ZONE_RUNTIME;
-                        duration = Math.max(minRuntime, Math.min(duration, maxRuntime));
-                        
-                        bridge.runNextZone(getThing().getUID().getId(), duration, localConfig.deviceId);
-                    }
-                    break;
-
-                case CHANNEL_DEVICE_SET_RAIN_DELAY:
-                    if (command instanceof DecimalType) {
-                        int hours = ((DecimalType) command).intValue();
-                        // Limit to 0-72 hours
-                        hours = Math.max(0, Math.min(hours, 72));
-                        
-                        bridge.rainDelay(getThing().getUID().getId(), hours, localConfig.deviceId);
-                        
-                        // Update local state immediately
-                        rainDelayHours = hours;
-                        updateState(CHANNEL_DEVICE_RAIN_DELAY, new QuantityType<>(hours, Units.HOUR));
-                        updateState(CHANNEL_DEVICE_RAIN_DELAY_HOURS, new DecimalType(hours));
-                    }
-                    break;
-
-                case CHANNEL_DEVICE_PAUSE:
-                    if (command instanceof OnOffType) {
-                        boolean pause = command == OnOffType.ON;
-                        bridge.pauseDevice(getThing().getUID().getId(), pause, localConfig.deviceId);
-                        
-                        // Update local state
-                        devicePaused = pause;
-                        updateState(CHANNEL_DEVICE_PAUSED, pause ? OnOffType.ON : OnOffType.OFF);
-                    }
-                    break;
-
-                default:
-                    logger.debug("Unhandled command for channel {}", channelId);
-                    break;
+            Bridge bridge = getBridge();
+            if (bridge == null) {
+                logger.debug("Cannot refresh device data - no bridge");
+                return;
             }
-        } catch (Exception e) {
-            logger.error("Error handling command {} for channel {}: {}", command, channelId, e.getMessage(), e);
-        }
-    }
 
-    @Override
-    public Collection<Class<? extends ThingHandlerService>> getServices() {
-        return Collections.emptyList();
-    }
+            RachioBridgeHandler bridgeHandler = (RachioBridgeHandler) bridge.getHandler();
+            if (bridgeHandler == null) {
+                logger.debug("Cannot refresh device data - bridge handler not available");
+                return;
+            }
 
-    @Override
-    public void onStatusChanged(ThingStatus status) {
-        // Bridge status changed
-        if (status == ThingStatus.ONLINE) {
+            RachioDeviceConfiguration config = this.config;
+            if (config == null || config.deviceId == null || config.deviceId.isEmpty()) {
+                logger.debug("Cannot refresh device data - missing device ID");
+                return;
+            }
+
+            // Get device data from bridge cache
+            RachioDevice device = bridgeHandler.getDeviceData(config.deviceId);
+            if (device != null) {
+                updateDeviceData(device);
+            } else {
+                // Device not in cache, try to get it directly
+                logger.debug("Device not in cache, will refresh on next bridge poll");
+            }
+
+            lastUpdated = ZonedDateTime.now();
+            updateState(CHANNEL_LAST_UPDATED, new DateTimeType(lastUpdated));
             updateStatus(ThingStatus.ONLINE);
-            startPolling();
+
+        } catch (Exception e) {
+            logger.debug("Error refreshing device data: {}", e.getMessage(), e);
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
+        }
+    }
+
+    private void updateDeviceData(RachioDevice device) {
+        this.deviceData = device;
+        RachioDeviceConfiguration config = this.config;
+        
+        if (config == null || device == null) {
+            return;
+        }
+
+        logger.debug("Updating device data for {} (ID: {})", device.name, device.id);
+
+        // Update basic device info
+        updateState(CHANNEL_DEVICE_NAME, new StringType(device.name));
+        updateState(CHANNEL_DEVICE_STATUS, new StringType(device.status));
+        updateState(CHANNEL_DEVICE_ONLINE, OnOffType.from("ONLINE".equals(device.status)));
+        updateState(CHANNEL_DEVICE_SERIAL, new StringType(device.serialNumber));
+        updateState(CHANNEL_DEVICE_MODEL, new StringType(device.model));
+        
+        if (device.zones != null) {
+            updateState(CHANNEL_DEVICE_ZONE_COUNT, new DecimalType(device.zones.size()));
+        }
+        
+        // Update heartbeat if available
+        if (device.lastHeartbeat != null) {
+            updateState(CHANNEL_DEVICE_LAST_HEARTBEAT, new DateTimeType(device.lastHeartbeat));
+        }
+        
+        // Update overall status
+        updateState(CHANNEL_STATUS, new StringType(device.status));
+
+        // Update device online status
+        boolean newOnlineStatus = "ONLINE".equals(device.status);
+        if (newOnlineStatus != deviceOnline) {
+            deviceOnline = newOnlineStatus;
+            logger.info("Device {} is now {}", device.name, deviceOnline ? "ONLINE" : "OFFLINE");
+        }
+
+        // Update properties for thing
+        updateDeviceProperties(device);
+    }
+
+    private void updateDeviceProperties(RachioDevice device) {
+        Map<String, String> properties = getThing().getProperties();
+        
+        // Only update if changed
+        boolean needsUpdate = false;
+        
+        if (!device.id.equals(properties.get(PROPERTY_DEVICE_ID))) {
+            needsUpdate = true;
+        }
+        if (!device.name.equals(properties.get(PROPERTY_DEVICE_NAME))) {
+            needsUpdate = true;
+        }
+        if (!device.serialNumber.equals(properties.get(PROPERTY_DEVICE_SERIAL))) {
+            needsUpdate = true;
+        }
+        if (!device.model.equals(properties.get(PROPERTY_DEVICE_MODEL))) {
+            needsUpdate = true;
+        }
+        
+        if (needsUpdate) {
+            Map<String, String> newProperties = new java.util.HashMap<>();
+            newProperties.put(PROPERTY_DEVICE_ID, device.id);
+            newProperties.put(PROPERTY_DEVICE_NAME, device.name);
+            newProperties.put(PROPERTY_DEVICE_SERIAL, device.serialNumber);
+            newProperties.put(PROPERTY_DEVICE_MODEL, device.model);
+            newProperties.put(PROPERTY_ZONES, String.valueOf(device.zones != null ? device.zones.size() : 0));
+            newProperties.put(PROPERTY_ONLINE, String.valueOf(deviceOnline));
             
-            if (config != null && config.monitorForecast) {
-                startForecastUpdates();
+            // Add MAC address if available
+            if (device.macAddress != null && !device.macAddress.isEmpty()) {
+                newProperties.put(PROPERTY_MAC, device.macAddress);
             }
             
-            if (config != null && (config.monitorWaterUsage || config.monitorSavings || config.monitorAlerts)) {
-                startAnalyticsUpdates();
-            }
-            
-            // Refresh state when bridge comes online
-            scheduler.execute(this::pollDeviceState);
-        } else {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
-            stopPolling();
-            stopForecastUpdates();
-            stopAnalyticsUpdates();
+            updateProperties(newProperties);
+            logger.debug("Updated device properties for {}", device.name);
         }
     }
 
     @Override
-    public void onZoneStateUpdated(RachioZone zone) {
-        // Zone state updated via webhook - update device if zone belongs to this device
-        if (lastDeviceState != null && lastDeviceState.getZones().stream()
-                .anyMatch(z -> z.getId().equals(zone.getId()))) {
-            // Refresh device state to get updated zone status
-            scheduler.execute(this::pollDeviceState);
+    public void zoneStatusChanged(RachioZone zone) {
+        // Device handler doesn't need to react to zone status directly
+        // But we can update if it's a zone from this device
+        if (deviceData != null && deviceData.zones != null) {
+            for (RachioZone deviceZone : deviceData.zones) {
+                if (deviceZone.id.equals(zone.id)) {
+                    logger.debug("Zone status update for device {}", deviceData.name);
+                    // Could update device status if needed
+                    break;
+                }
+            }
         }
     }
 
     @Override
-    public void onDeviceStateUpdated() {
-        // Device state updated via bridge - refresh our state
-        scheduler.execute(this::pollDeviceState);
+    public void deviceStatusChanged(String deviceId, boolean online) {
+        RachioDeviceConfiguration config = this.config;
+        if (config != null && config.deviceId != null && config.deviceId.equals(deviceId)) {
+            logger.debug("Device status changed: {} is {}", deviceId, online ? "online" : "offline");
+            
+            // Update device online status
+            deviceOnline = online;
+            updateState(CHANNEL_DEVICE_ONLINE, OnOffType.from(online));
+            updateState(CHANNEL_DEVICE_STATUS, new StringType(online ? STATUS_ONLINE : STATUS_OFFLINE));
+            updateState(CHANNEL_STATUS, new StringType(online ? STATUS_ONLINE : STATUS_OFFLINE));
+            
+            if (online) {
+                updateStatus(ThingStatus.ONLINE);
+            } else {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "Device offline");
+            }
+        }
     }
 
-    /**
-     * Get the current device state
-     */
-    public @Nullable RachioDevice getDeviceState() {
-        return lastDeviceState;
+    @Override
+    public void webhookEventReceived(String deviceId, String eventType, String eventData) {
+        RachioDeviceConfiguration config = this.config;
+        if (config != null && config.deviceId != null && config.deviceId.equals(deviceId)) {
+            logger.debug("Webhook event received for device {}: {}", deviceId, eventType);
+            
+            // Update last heartbeat on any event
+            updateState(CHANNEL_DEVICE_LAST_HEARTBEAT, new DateTimeType(ZonedDateTime.now()));
+            
+            // Handle specific event types
+            switch (eventType) {
+                case EVENT_DEVICE_STATUS:
+                    // Update device status from webhook
+                    if (eventData.contains("\"status\":\"ONLINE\"")) {
+                        updateState(CHANNEL_DEVICE_STATUS, new StringType(STATUS_ONLINE));
+                        updateState(CHANNEL_DEVICE_ONLINE, OnOffType.ON);
+                    } else if (eventData.contains("\"status\":\"OFFLINE\"")) {
+                        updateState(CHANNEL_DEVICE_STATUS, new StringType(STATUS_OFFLINE));
+                        updateState(CHANNEL_DEVICE_ONLINE, OnOffType.OFF);
+                    }
+                    break;
+                    
+                case EVENT_RAIN_DELAY:
+                    // Update rain delay status
+                    logger.info("Rain delay event received for device {}", deviceId);
+                    break;
+                    
+                case EVENT_WEATHER_INTEL:
+                    // Weather intelligence event
+                    logger.debug("Weather intelligence event received");
+                    break;
+            }
+        }
     }
 
-    /**
-     * Get last update time
-     */
-    public @Nullable ZonedDateTime getLastUpdate() {
-        return lastUpdate;
+    @Override
+    public void dispose() {
+        ScheduledFuture<?> pollingJob = this.pollingJob;
+        if (pollingJob != null && !pollingJob.isCancelled()) {
+            pollingJob.cancel(true);
+        }
+        this.pollingJob = null;
+
+        // Unregister from bridge
+        Bridge bridge = getBridge();
+        if (bridge != null) {
+            RachioBridgeHandler bridgeHandler = (RachioBridgeHandler) bridge.getHandler();
+            if (bridgeHandler != null) {
+                bridgeHandler.unregisterListener(this);
+            }
+        }
+
+        super.dispose();
+        logger.debug("Disposed device handler");
     }
 
-    /**
-     * Get device configuration
-     */
-    public @Nullable RachioDeviceConfiguration getDeviceConfig() {
+    // Getters for other handlers
+    public @Nullable RachioDevice getDeviceData() {
+        return deviceData;
+    }
+
+    public @Nullable RachioDeviceConfiguration getDeviceConfiguration() {
         return config;
     }
 
-    /**
-     * Get current forecast data
-     */
-    public @Nullable JsonObject getForecast() {
-        return lastForecast;
+    public boolean isDeviceOnline() {
+        return deviceOnline;
     }
 
-    /**
-     * Get current water usage data
-     */
-    public @Nullable JsonObject getWaterUsage() {
-        return lastWaterUsage;
+    public void setPollInterval(int interval) {
+        this.pollInterval = interval;
+        startPolling();
     }
-
+    
     /**
-     * Get current savings data
+     * Get a specific zone from this device
      */
-    public @Nullable JsonObject getSavings() {
-        return lastSavings;
+    public @Nullable RachioZone getZone(String zoneId) {
+        RachioDevice device = deviceData;
+        if (device != null && device.zones != null) {
+            for (RachioZone zone : device.zones) {
+                if (zone.id.equals(zoneId)) {
+                    return zone;
+                }
+            }
+        }
+        return null;
     }
-
+    
     /**
-     * Get current alerts
+     * Get all zones from this device
      */
-    public @Nullable JsonArray getAlerts() {
-        return lastAlerts;
+    public @Nullable List<RachioZone> getAllZones() {
+        RachioDevice device = deviceData;
+        return device != null ? device.zones : null;
     }
 }
