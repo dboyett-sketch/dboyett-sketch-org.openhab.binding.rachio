@@ -1,352 +1,342 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Objects;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-
 import com.google.gson.annotations.SerializedName;
+import java.time.Instant;
+import java.util.List;
 
 /**
- * DTO for Rachio Device
+ * DTO for Rachio Device from Rachio API
+ * Based on: https://rachio.readme.io/reference/getting-started
  *
- * @author Brian G. - Initial contribution (from 2.5 binding)
- * @author Daniel B. - Major rewrite with professional data
+ * @author Dave Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioDevice {
-    private String id = "";
-    private String name = "";
-    private String serialNumber = "";
-    private String model = "";
-    private String macAddress = "";
-    private String firmwareVersion = "";
-    private String status = "";
+    // Device identification
+    public String id;
+    public String name;
+    public String status; // ONLINE, OFFLINE, SLEEP_MODE
     
-    @SerializedName("online")
-    private boolean online = false;
+    // Device information
+    @SerializedName("serialNumber")
+    public String serialNumber;
     
-    @SerializedName("paused")
-    private boolean paused = false;
+    @SerializedName("model")
+    public String model;
     
-    @SerializedName("createdDate")
-    private @Nullable Instant createdDate;
-    
-    @SerializedName("updatedDate")
-    private @Nullable Instant updatedDate;
-    
-    @SerializedName("lastHeardFrom")
-    private @Nullable Instant lastHeardFrom;
-    
-    @SerializedName("rainDelayExpirationDate")
-    private @Nullable Instant rainDelayExpirationDate;
-    
-    @SerializedName("rainDelayStartDate")
-    private @Nullable Instant rainDelayStartDate;
-    
-    @SerializedName("zones")
-    private List<RachioZone> zones = new ArrayList<>();
-    
-    @SerializedName("schedules")
-    private List<Object> schedules = new ArrayList<>();
-    
-    @SerializedName("flexScheduleRules")
-    private List<Object> flexScheduleRules = new ArrayList<>();
-    
-    @SerializedName("weatherIntelligence")
-    private @Nullable WeatherIntelligence weatherIntelligence;
+    @SerializedName("macAddress")
+    public @Nullable String macAddress;
     
     @SerializedName("latitude")
-    private @Nullable Double latitude;
+    public double latitude;
     
     @SerializedName("longitude")
-    private @Nullable Double longitude;
+    public double longitude;
     
-    @SerializedName("elevation")
-    private @Nullable Double elevation; // feet
+    @SerializedName("timeZone")
+    public String timeZone;
     
     @SerializedName("zip")
-    private @Nullable String zipCode;
+    public String zipCode;
     
-    @SerializedName("timezone")
-    private @Nullable String timezone;
+    // Device capabilities
+    @SerializedName("on")
+    public boolean poweredOn;
     
-    @SerializedName("wateringScaleFactor")
-    private @Nullable Double wateringScaleFactor;
+    @SerializedName("paused")
+    public boolean paused;
     
-    @SerializedName("wateringScaleStartDate")
-    private @Nullable Instant wateringScaleStartDate;
+    @SerializedName("deleted")
+    public boolean deleted;
     
-    // Getters and Setters
-    public String getId() {
-        return id;
+    // Device status
+    @SerializedName("rainDelayExpirationDate")
+    public @Nullable Instant rainDelayExpirationDate;
+    
+    @SerializedName("rainDelayStartDate")
+    public @Nullable Instant rainDelayStartDate;
+    
+    @SerializedName("rainDelay")
+    public int rainDelay; // seconds remaining
+    
+    @SerializedName("lastWateredDate")
+    public @Nullable Instant lastWateredDate;
+    
+    @SerializedName("lastRainDelayStartDate")
+    public @Nullable Instant lastRainDelayStartDate;
+    
+    @SerializedName("lastConnectivity")
+    public @Nullable Instant lastConnectivity;
+    
+    // Device settings
+    @SerializedName("createdDate")
+    public Instant createdDate;
+    
+    @SerializedName("updatedDate")
+    public Instant updatedDate;
+    
+    @SerializedName("homeKitCompatible")
+    public boolean homeKitCompatible;
+    
+    @SerializedName("touchSleepActive")
+    public boolean touchSleepActive;
+    
+    @SerializedName("touchSleepDelay")
+    public int touchSleepDelay;
+    
+    @SerializedName("touchSleepDelayEnabled")
+    public boolean touchSleepDelayEnabled;
+    
+    // Network information
+    @SerializedName("network")
+    public @Nullable NetworkInfo network;
+    
+    @SerializedName("scheduleModeType")
+    public String scheduleModeType; // MANUAL, AUTO
+    
+    @SerializedName("scheduleModeModifiedDate")
+    public @Nullable Instant scheduleModeModifiedDate;
+    
+    // Weather intelligence
+    @SerializedName("weatherIntelligenceOn")
+    public boolean weatherIntelligenceOn;
+    
+    @SerializedName("wateringAdjustmentRuntimes")
+    public int[] wateringAdjustmentRuntimes = new int[0];
+    
+    // Device components
+    @SerializedName("zones")
+    public @Nullable List<RachioZone> zones;
+    
+    @SerializedName("schedules")
+    public @Nullable List<ScheduleSummary> schedules;
+    
+    // Rachio 3 specific features
+    @SerializedName("generation")
+    public int generation; // 1, 2, or 3
+    
+    @SerializedName("flexScheduleRules")
+    public @Nullable Object flexScheduleRules;
+    
+    @SerializedName("seasonalAdjustment")
+    public int seasonalAdjustment; // -100 to 100
+    
+    @SerializedName("cycleSoak")
+    public boolean cycleSoakEnabled;
+    
+    @SerializedName("cycleSoakDuration")
+    public int cycleSoakDuration;
+    
+    @SerializedName("cycleSoakSoakDuration")
+    public int cycleSoakSoakDuration;
+    
+    @SerializedName("etSkipMultiplier")
+    public double etSkipMultiplier;
+    
+    // Nested classes
+    
+    public static class NetworkInfo {
+        @SerializedName("ssid")
+        public String ssid;
+        
+        @SerializedName("strength")
+        public int signalStrength;
+        
+        @SerializedName("online")
+        public boolean online;
     }
     
-    public void setId(String id) {
-        this.id = id;
+    public static class ScheduleSummary {
+        @SerializedName("id")
+        public String id;
+        
+        @SerializedName("name")
+        public String name;
+        
+        @SerializedName("enabled")
+        public boolean enabled;
+        
+        @SerializedName("scheduleType")
+        public String scheduleType; // "FIXED", "FLEX", "FLEX_DAILY"
+        
+        @SerializedName("startDate")
+        public @Nullable String startDate;
+        
+        @SerializedName("endDate")
+        public @Nullable String endDate;
+        
+        @SerializedName("totalDuration")
+        public int totalDuration;
     }
     
-    public String getName() {
-        return name;
-    }
+    // Helper methods
     
-    public void setName(String name) {
-        this.name = name;
-    }
-    
-    public String getSerialNumber() {
-        return serialNumber;
-    }
-    
-    public void setSerialNumber(String serialNumber) {
-        this.serialNumber = serialNumber;
-    }
-    
-    public String getModel() {
-        return model;
-    }
-    
-    public void setModel(String model) {
-        this.model = model;
-    }
-    
-    public String getMacAddress() {
-        return macAddress;
-    }
-    
-    public void setMacAddress(String macAddress) {
-        this.macAddress = macAddress;
-    }
-    
-    public String getFirmwareVersion() {
-        return firmwareVersion;
-    }
-    
-    public void setFirmwareVersion(String firmwareVersion) {
-        this.firmwareVersion = firmwareVersion;
-    }
-    
-    public String getStatus() {
-        return status;
-    }
-    
-    public void setStatus(String status) {
-        this.status = status;
-    }
-    
+    /**
+     * Check if device is online
+     */
     public boolean isOnline() {
-        return online;
+        return "ONLINE".equals(status);
     }
     
-    public void setOnline(boolean online) {
-        this.online = online;
+    /**
+     * Check if device is offline
+     */
+    public boolean isOffline() {
+        return "OFFLINE".equals(status);
     }
     
-    public boolean isPaused() {
-        return paused;
+    /**
+     * Check if device is in sleep mode
+     */
+    public boolean isSleepMode() {
+        return "SLEEP_MODE".equals(status);
     }
     
-    public void setPaused(boolean paused) {
-        this.paused = paused;
+    /**
+     * Check if rain delay is active
+     */
+    public boolean isRainDelayActive() {
+        return rainDelay > 0;
     }
     
-    public @Nullable Instant getCreatedDate() {
-        return createdDate;
+    /**
+     * Get rain delay remaining in hours
+     */
+    public double getRainDelayRemainingHours() {
+        return rainDelay / 3600.0;
     }
     
-    public void setCreatedDate(@Nullable Instant createdDate) {
-        this.createdDate = createdDate;
+    /**
+     * Check if device is a Rachio 3
+     */
+    public boolean isRachio3() {
+        return generation == 3;
     }
     
-    public @Nullable Instant getUpdatedDate() {
-        return updatedDate;
+    /**
+     * Get zone count
+     */
+    public int getZoneCount() {
+        return zones != null ? zones.size() : 0;
     }
     
-    public void setUpdatedDate(@Nullable Instant updatedDate) {
-        this.updatedDate = updatedDate;
+    /**
+     * Get schedule count
+     */
+    public int getScheduleCount() {
+        return schedules != null ? schedules.size() : 0;
     }
     
-    public @Nullable Instant getLastHeardFrom() {
-        return lastHeardFrom;
+    /**
+     * Get enabled zone count
+     */
+    public int getEnabledZoneCount() {
+        if (zones == null) return 0;
+        
+        int count = 0;
+        for (RachioZone zone : zones) {
+            if (zone.enabled) {
+                count++;
+            }
+        }
+        return count;
     }
     
-    public void setLastHeardFrom(@Nullable Instant lastHeardFrom) {
-        this.lastHeardFrom = lastHeardFrom;
+    /**
+     * Get zone by ID
+     */
+    public @Nullable RachioZone getZone(String zoneId) {
+        if (zones == null) return null;
+        
+        for (RachioZone zone : zones) {
+            if (zoneId.equals(zone.id)) {
+                return zone;
+            }
+        }
+        return null;
     }
     
-    public @Nullable Instant getRainDelayExpirationDate() {
-        return rainDelayExpirationDate;
+    /**
+     * Get zone by number
+     */
+    public @Nullable RachioZone getZone(int zoneNumber) {
+        if (zones == null) return null;
+        
+        for (RachioZone zone : zones) {
+            if (zone.zoneNumber == zoneNumber) {
+                return zone;
+            }
+        }
+        return null;
     }
     
-    public void setRainDelayExpirationDate(@Nullable Instant rainDelayExpirationDate) {
-        this.rainDelayExpirationDate = rainDelayExpirationDate;
+    /**
+     * Get all enabled zones
+     */
+    public @Nullable List<RachioZone> getEnabledZones() {
+        if (zones == null) return null;
+        
+        return zones.stream()
+                .filter(zone -> zone.enabled)
+                .collect(java.util.stream.Collectors.toList());
     }
     
-    public @Nullable Instant getRainDelayStartDate() {
-        return rainDelayStartDate;
+    /**
+     * Check if weather intelligence is enabled
+     */
+    public boolean isWeatherIntelligenceEnabled() {
+        return weatherIntelligenceOn;
     }
     
-    public void setRainDelayStartDate(@Nullable Instant rainDelayStartDate) {
-        this.rainDelayStartDate = rainDelayStartDate;
+    /**
+     * Check if cycle and soak is enabled
+     */
+    public boolean isCycleSoakEnabled() {
+        return cycleSoakEnabled;
     }
     
-    public List<RachioZone> getZones() {
-        return zones;
+    /**
+     * Get seasonal adjustment percentage
+     */
+    public int getSeasonalAdjustment() {
+        return seasonalAdjustment;
     }
     
-    public void setZones(List<RachioZone> zones) {
-        this.zones = zones;
+    /**
+     * Get device summary for logging
+     */
+    public String getSummary() {
+        return String.format("Device %s (%s): %s, %d zones, %s", 
+                name, model, status, 
+                getZoneCount(), 
+                isOnline() ? "Online" : "Offline");
     }
     
-    public List<Object> getSchedules() {
-        return schedules;
-    }
-    
-    public void setSchedules(List<Object> schedules) {
-        this.schedules = schedules;
-    }
-    
-    public List<Object> getFlexScheduleRules() {
-        return flexScheduleRules;
-    }
-    
-    public void setFlexScheduleRules(List<Object> flexScheduleRules) {
-        this.flexScheduleRules = flexScheduleRules;
-    }
-    
-    public @Nullable WeatherIntelligence getWeatherIntelligence() {
-        return weatherIntelligence;
-    }
-    
-    public void setWeatherIntelligence(@Nullable WeatherIntelligence weatherIntelligence) {
-        this.weatherIntelligence = weatherIntelligence;
-    }
-    
-    public @Nullable Double getLatitude() {
-        return latitude;
-    }
-    
-    public void setLatitude(@Nullable Double latitude) {
-        this.latitude = latitude;
-    }
-    
-    public @Nullable Double getLongitude() {
-        return longitude;
-    }
-    
-    public void setLongitude(@Nullable Double longitude) {
-        this.longitude = longitude;
-    }
-    
-    public @Nullable Double getElevation() {
-        return elevation;
-    }
-    
-    public void setElevation(@Nullable Double elevation) {
-        this.elevation = elevation;
-    }
-    
-    public @Nullable String getZipCode() {
-        return zipCode;
-    }
-    
-    public void setZipCode(@Nullable String zipCode) {
-        this.zipCode = zipCode;
-    }
-    
-    public @Nullable String getTimezone() {
-        return timezone;
-    }
-    
-    public void setTimezone(@Nullable String timezone) {
-        this.timezone = timezone;
-    }
-    
-    public @Nullable Double getWateringScaleFactor() {
-        return wateringScaleFactor;
-    }
-    
-    public void setWateringScaleFactor(@Nullable Double wateringScaleFactor) {
-        this.wateringScaleFactor = wateringScaleFactor;
-    }
-    
-    public @Nullable Instant getWateringScaleStartDate() {
-        return wateringScaleStartDate;
-    }
-    
-    public void setWateringScaleStartDate(@Nullable Instant wateringScaleStartDate) {
-        this.wateringScaleStartDate = wateringScaleStartDate;
-    }
-    
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        RachioDevice that = (RachioDevice) o;
-        return Objects.equals(id, that.id);
-    }
-    
-    @Override
-    public int hashCode() {
-        return Objects.hash(id);
-    }
-    
-    @Override
-    public String toString() {
-        return "RachioDevice{" +
-                "id='" + id + '\'' +
-                ", name='" + name + '\'' +
-                ", model='" + model + '\'' +
-                ", online=" + online +
-                ", paused=" + paused +
-                ", zones=" + zones.size() +
-                ", weatherIntel=" + (weatherIntelligence != null ? "enabled" : "disabled") +
-                '}';
-    }
-}
-
-/**
- * Weather Intelligence DTO
- */
-@NonNullByDefault
-class WeatherIntelligence {
-    private boolean enabled = false;
-    private @Nullable String status;
-    private @Nullable String skipReason;
-    private @Nullable Instant lastSkipDate;
-    
-    public boolean isEnabled() {
-        return enabled;
-    }
-    
-    public void setEnabled(boolean enabled) {
-        this.enabled = enabled;
-    }
-    
-    public @Nullable String getStatus() {
-        return status;
-    }
-    
-    public void setStatus(@Nullable String status) {
-        this.status = status;
-    }
-    
-    public @Nullable String getSkipReason() {
-        return skipReason;
-    }
-    
-    public void setSkipReason(@Nullable String skipReason) {
-        this.skipReason = skipReason;
-    }
-    
-    public @Nullable Instant getLastSkipDate() {
-        return lastSkipDate;
-    }
-    
-    public void setLastSkipDate(@Nullable Instant lastSkipDate) {
-        this.lastSkipDate = lastSkipDate;
+    /**
+     * Get detailed device info
+     */
+    public Map<String, Object> getInfo() {
+        Map<String, Object> info = new java.util.HashMap<>();
+        info.put("id", id);
+        info.put("name", name);
+        info.put("model", model);
+        info.put("status", status);
+        info.put("serial", serialNumber);
+        info.put("zones", getZoneCount());
+        info.put("enabledZones", getEnabledZoneCount());
+        info.put("online", isOnline());
+        info.put("rainDelayActive", isRainDelayActive());
+        info.put("rainDelayHours", getRainDelayRemainingHours());
+        info.put("weatherIntelligence", isWeatherIntelligenceEnabled());
+        info.put("cycleSoak", isCycleSoakEnabled());
+        info.put("seasonalAdjustment", getSeasonalAdjustment());
+        info.put("generation", generation);
+        info.put("latitude", latitude);
+        info.put("longitude", longitude);
+        info.put("timeZone", timeZone);
+        
+        return info;
     }
 }
