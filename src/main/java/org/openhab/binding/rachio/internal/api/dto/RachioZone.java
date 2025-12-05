@@ -1,260 +1,344 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.time.Instant;
-import java.util.Objects;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-
 import com.google.gson.annotations.SerializedName;
 
 /**
- * DTO for Rachio Zone
+ * DTO for Rachio Zone from Rachio API
+ * Based on: https://rachio.readme.io/reference/getting-started
  *
- * @author Brian G. - Initial contribution (from 2.5 binding)
- * @author Daniel B. - Major rewrite with professional data
+ * @author Dave Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioZone {
-    private String id = "";
-    private String name = "";
-    private int zoneNumber;
-    private boolean enabled = true;
-    private int duration = 600; // Default 10 minutes in seconds
+    // Zone identification
+    public String id;
+    public String name;
+    public int zoneNumber;
     
-    @SerializedName("customSoil")
-    private @Nullable CustomSoil customSoil;
+    // Zone status
+    public boolean enabled;
+    public String imageUrl;
     
-    @SerializedName("customCrop")
-    private @Nullable CustomCrop customCrop;
+    // Zone configuration
+    @SerializedName("runtime")
+    public int runtime; // seconds
     
-    @SerializedName("customNozzle")
-    private @Nullable CustomNozzle customNozzle;
-    
-    @SerializedName("customSlope")
-    private @Nullable CustomSlope customSlope;
-    
-    @SerializedName("customShade")
-    private @Nullable CustomShade customShade;
-    
-    @SerializedName("rootZoneDepth")
-    private @Nullable Double rootZoneDepth; // inches
-    
-    @SerializedName("efficiency")
-    private @Nullable Double efficiency; // 0.0-1.0
-    
-    @SerializedName("yardAreaSquareFeet")
-    private @Nullable Double yardAreaSquareFeet;
+    @SerializedName("maxRuntime")
+    public int maxRuntime; // seconds
     
     @SerializedName("wateringAdjustmentRuntimes")
-    private @Nullable Integer[] wateringAdjustmentRuntimes; // Levels 1-5 in seconds
+    public int[] wateringAdjustmentRuntimes = new int[5]; // 5 levels
+    
+    // Professional irrigation data
+    @SerializedName("customSoil")
+    public @Nullable CustomSoil customSoil;
+    
+    @SerializedName("customCrop")
+    public @Nullable CustomCrop customCrop;
+    
+    @SerializedName("customNozzle")
+    public @Nullable CustomNozzle customNozzle;
+    
+    @SerializedName("customSlope")
+    public @Nullable CustomSlope customSlope;
+    
+    @SerializedName("customShade")
+    public @Nullable CustomShade customShade;
+    
+    // Advanced irrigation settings
+    @SerializedName("efficiency")
+    public double efficiency = 0.75; // 75% default
+    
+    @SerializedName("rootZoneDepth")
+    public double rootZoneDepth = 6.0; // inches default
+    
+    @SerializedName("yardAreaSquareFeet")
+    public double yardAreaSquareFeet = 0.0;
     
     @SerializedName("availableWater")
-    private @Nullable Double availableWater; // inches
+    public double availableWater = 0.0;
     
-    @SerializedName("waterBudget")
-    private @Nullable Integer waterBudget; // percentage
+    @SerializedName("allowedRuntime")
+    public int allowedRuntime = 0;
     
+    @SerializedName("saturatedDepthOfWater")
+    public double saturatedDepthOfWater = 0.0;
+    
+    // Rachio 3 specific features
+    @SerializedName("cycleSoak")
+    public boolean cycleSoak = false;
+    
+    @SerializedName("cycleSoakDuration")
+    public int cycleSoakDuration = 0;
+    
+    @SerializedName("cycleSoakSoakDuration")
+    public int cycleSoakSoakDuration = 0;
+    
+    @SerializedName("seasonalAdjustment")
+    public int seasonalAdjustment = 0;
+    
+    // Zone statistics
     @SerializedName("lastWateredDate")
-    private @Nullable Instant lastWateredDate;
+    public @Nullable String lastWateredDate;
     
-    @SerializedName("imageUrl")
-    private @Nullable String imageUrl;
+    @SerializedName("totalDuration")
+    public long totalDuration = 0; // lifetime seconds
     
-    @SerializedName("status")
-    private @Nullable ZoneRunStatus status;
+    @SerializedName("totalWaterUsage")
+    public double totalWaterUsage = 0.0; // gallons
     
-    @SerializedName("scheduleDataModifiedDate")
-    private @Nullable Instant scheduleDataModifiedDate;
+    // Zone state (from events/webhooks)
+    @SerializedName("state")
+    public @Nullable String state; // IDLE, RUNNING, COMPLETED
     
-    // Getters and Setters
-    public String getId() {
-        return id;
+    @SerializedName("startDate")
+    public @Nullable String startDate;
+    
+    @SerializedName("endDate")
+    public @Nullable String endDate;
+    
+    @SerializedName("duration")
+    public int duration = 0;
+    
+    // Helper methods
+    
+    /**
+     * Check if zone is currently running
+     */
+    public boolean isRunning() {
+        return "RUNNING".equals(state);
     }
     
-    public void setId(String id) {
-        this.id = id;
+    /**
+     * Check if zone watering is completed
+     */
+    public boolean isCompleted() {
+        return "COMPLETED".equals(state);
     }
     
-    public String getName() {
-        return name;
+    /**
+     * Check if zone is idle
+     */
+    public boolean isIdle() {
+        return state == null || "IDLE".equals(state);
     }
     
-    public void setName(String name) {
-        this.name = name;
+    /**
+     * Get zone status string
+     */
+    public String getStatus() {
+        if (isRunning()) return "RUNNING";
+        if (isCompleted()) return "COMPLETED";
+        return "IDLE";
     }
     
-    public int getZoneNumber() {
-        return zoneNumber;
+    /**
+     * Get adjusted runtime based on watering adjustment level (1-5)
+     */
+    public int getAdjustedRuntime(int adjustmentLevel) {
+        if (adjustmentLevel < 1 || adjustmentLevel > 5) {
+            return runtime;
+        }
+        if (wateringAdjustmentRuntimes != null && wateringAdjustmentRuntimes.length >= adjustmentLevel) {
+            return wateringAdjustmentRuntimes[adjustmentLevel - 1];
+        }
+        return runtime;
     }
     
-    public void setZoneNumber(int zoneNumber) {
-        this.zoneNumber = zoneNumber;
+    /**
+     * Get soil type name
+     */
+    public String getSoilType() {
+        return customSoil != null ? customSoil.name : "Unknown";
     }
     
-    public boolean isEnabled() {
-        return enabled;
+    /**
+     * Get crop type name
+     */
+    public String getCropType() {
+        return customCrop != null ? customCrop.name : "Unknown";
     }
     
-    public void setEnabled(boolean enabled) {
-        this.enabled = enabled;
+    /**
+     * Get crop coefficient
+     */
+    public double getCropCoefficient() {
+        return customCrop != null ? customCrop.coefficient : 0.8;
     }
     
-    public int getDuration() {
-        return duration;
+    /**
+     * Get nozzle type
+     */
+    public String getNozzleType() {
+        return customNozzle != null ? customNozzle.name : "Unknown";
     }
     
-    public void setDuration(int duration) {
-        this.duration = duration;
+    /**
+     * Get nozzle application rate (inches per hour)
+     */
+    public double getNozzleRate() {
+        return customNozzle != null ? customNozzle.inchesPerHour : 1.0;
     }
     
-    public @Nullable CustomSoil getCustomSoil() {
-        return customSoil;
+    /**
+     * Get slope type
+     */
+    public String getSlopeType() {
+        return customSlope != null ? customSlope.name : "Flat";
     }
     
-    public void setCustomSoil(@Nullable CustomSoil customSoil) {
-        this.customSoil = customSoil;
+    /**
+     * Get shade type
+     */
+    public String getShadeType() {
+        return customShade != null ? customShade.name : "Full Sun";
     }
     
-    public @Nullable CustomCrop getCustomCrop() {
-        return customCrop;
+    /**
+     * Get efficiency percentage
+     */
+    public double getEfficiency() {
+        return efficiency * 100; // Convert to percentage
     }
     
-    public void setCustomCrop(@Nullable CustomCrop customCrop) {
-        this.customCrop = customCrop;
-    }
-    
-    public @Nullable CustomNozzle getCustomNozzle() {
-        return customNozzle;
-    }
-    
-    public void setCustomNozzle(@Nullable CustomNozzle customNozzle) {
-        this.customNozzle = customNozzle;
-    }
-    
-    public @Nullable CustomSlope getCustomSlope() {
-        return customSlope;
-    }
-    
-    public void setCustomSlope(@Nullable CustomSlope customSlope) {
-        this.customSlope = customSlope;
-    }
-    
-    public @Nullable CustomShade getCustomShade() {
-        return customShade;
-    }
-    
-    public void setCustomShade(@Nullable CustomShade customShade) {
-        this.customShade = customShade;
-    }
-    
-    public @Nullable Double getRootZoneDepth() {
+    /**
+     * Get root depth in inches
+     */
+    public double getRootDepth() {
         return rootZoneDepth;
     }
     
-    public void setRootZoneDepth(@Nullable Double rootZoneDepth) {
-        this.rootZoneDepth = rootZoneDepth;
-    }
-    
-    public @Nullable Double getEfficiency() {
-        return efficiency;
-    }
-    
-    public void setEfficiency(@Nullable Double efficiency) {
-        this.efficiency = efficiency;
-    }
-    
-    public @Nullable Double getYardAreaSquareFeet() {
+    /**
+     * Get zone area in square feet
+     */
+    public double getArea() {
         return yardAreaSquareFeet;
     }
     
-    public void setYardAreaSquareFeet(@Nullable Double yardAreaSquareFeet) {
-        this.yardAreaSquareFeet = yardAreaSquareFeet;
-    }
-    
-    public @Nullable Integer[] getWateringAdjustmentRuntimes() {
-        return wateringAdjustmentRuntimes;
-    }
-    
-    public void setWateringAdjustmentRuntimes(@Nullable Integer[] wateringAdjustmentRuntimes) {
-        this.wateringAdjustmentRuntimes = wateringAdjustmentRuntimes;
-    }
-    
-    public @Nullable Double getAvailableWater() {
+    /**
+     * Get available water (inches)
+     */
+    public double getAvailableWater() {
         return availableWater;
     }
     
-    public void setAvailableWater(@Nullable Double availableWater) {
-        this.availableWater = availableWater;
+    /**
+     * Get watering time for specific depth
+     */
+    public double getWateringTimeForDepth(double depthInches) {
+        double rate = getNozzleRate();
+        if (rate > 0) {
+            return (depthInches / rate) * 3600; // Convert to seconds
+        }
+        return runtime;
     }
     
-    public @Nullable Integer getWaterBudget() {
-        return waterBudget;
+    /**
+     * Check if zone has professional data configured
+     */
+    public boolean hasProfessionalData() {
+        return customSoil != null || customCrop != null || customNozzle != null || 
+               customSlope != null || customShade != null;
     }
     
-    public void setWaterBudget(@Nullable Integer waterBudget) {
-        this.waterBudget = waterBudget;
+    /**
+     * Get professional data summary
+     */
+    public String getProfessionalSummary() {
+        StringBuilder sb = new StringBuilder();
+        if (customSoil != null) sb.append("Soil: ").append(customSoil.name).append(", ");
+        if (customCrop != null) sb.append("Crop: ").append(customCrop.name).append(", ");
+        if (customNozzle != null) sb.append("Nozzle: ").append(customNozzle.name).append(", ");
+        if (customSlope != null) sb.append("Slope: ").append(customSlope.name).append(", ");
+        if (customShade != null) sb.append("Shade: ").append(customShade.name);
+        
+        String result = sb.toString();
+        if (result.endsWith(", ")) {
+            result = result.substring(0, result.length() - 2);
+        }
+        return result;
     }
     
-    public @Nullable Instant getLastWateredDate() {
-        return lastWateredDate;
+    /**
+     * Get zone information map
+     */
+    public java.util.Map<String, Object> getInfo() {
+        java.util.Map<String, Object> info = new java.util.HashMap<>();
+        info.put("id", id);
+        info.put("name", name);
+        info.put("zoneNumber", zoneNumber);
+        info.put("enabled", enabled);
+        info.put("runtime", runtime);
+        info.put("maxRuntime", maxRuntime);
+        info.put("status", getStatus());
+        info.put("efficiency", getEfficiency());
+        info.put("rootDepth", getRootDepth());
+        info.put("area", getArea());
+        
+        if (customSoil != null) info.put("soilType", customSoil.name);
+        if (customCrop != null) {
+            info.put("cropType", customCrop.name);
+            info.put("cropCoefficient", customCrop.coefficient);
+        }
+        if (customNozzle != null) {
+            info.put("nozzleType", customNozzle.name);
+            info.put("nozzleRate", customNozzle.inchesPerHour);
+        }
+        if (customSlope != null) info.put("slopeType", customSlope.name);
+        if (customShade != null) info.put("shadeType", customShade.name);
+        
+        return info;
     }
     
-    public void setLastWateredDate(@Nullable Instant lastWateredDate) {
-        this.lastWateredDate = lastWateredDate;
+    /**
+     * Get zone summary for logging
+     */
+    public String getSummary() {
+        return String.format("Zone %d: %s (%s)", 
+            zoneNumber, name, enabled ? "Enabled" : "Disabled");
     }
     
-    public @Nullable String getImageUrl() {
-        return imageUrl;
+    /**
+     * Get detailed zone description
+     */
+    public String getDescription() {
+        return String.format("Zone %d: %s - Runtime: %ds, Soil: %s, Crop: %s, Nozzle: %s",
+            zoneNumber, name, runtime,
+            getSoilType(), getCropType(), getNozzleType());
     }
     
-    public void setImageUrl(@Nullable String imageUrl) {
-        this.imageUrl = imageUrl;
+    /**
+     * Check if cycle and soak is enabled for this zone
+     */
+    public boolean isCycleSoakEnabled() {
+        return cycleSoak;
     }
     
-    public @Nullable ZoneRunStatus getStatus() {
-        return status;
+    /**
+     * Get cycle soak settings
+     */
+    public String getCycleSoakSettings() {
+        if (cycleSoak) {
+            return String.format("Cycle: %ds, Soak: %ds", 
+                cycleSoakDuration, cycleSoakSoakDuration);
+        }
+        return "Disabled";
     }
     
-    public void setStatus(@Nullable ZoneRunStatus status) {
-        this.status = status;
-    }
-    
-    public @Nullable Instant getScheduleDataModifiedDate() {
-        return scheduleDataModifiedDate;
-    }
-    
-    public void setScheduleDataModifiedDate(@Nullable Instant scheduleDataModifiedDate) {
-        this.scheduleDataModifiedDate = scheduleDataModifiedDate;
-    }
-    
-    @Override
-    public boolean equals(Object o) {
-        if (this == o) return true;
-        if (o == null || getClass() != o.getClass()) return false;
-        RachioZone that = (RachioZone) o;
-        return Objects.equals(id, that.id);
-    }
-    
-    @Override
-    public int hashCode() {
-        return Objects.hash(id);
-    }
-    
-    @Override
-    public String toString() {
-        return "RachioZone{" +
-                "id='" + id + '\'' +
-                ", name='" + name + '\'' +
-                ", zoneNumber=" + zoneNumber +
-                ", enabled=" + enabled +
-                ", duration=" + duration +
-                ", soil=" + (customSoil != null ? customSoil.getName() : "null") +
-                ", crop=" + (customCrop != null ? customCrop.getName() : "null") +
-                ", nozzle=" + (customNozzle != null ? customNozzle.getName() : "null") +
-                ", rootDepth=" + rootZoneDepth +
-                ", efficiency=" + efficiency +
-                ", area=" + yardAreaSquareFeet +
-                '}';
+    /**
+     * Calculate water usage for a watering event
+     */
+    public double calculateWaterUsage(int durationSeconds) {
+        // Convert runtime to hours
+        double hours = durationSeconds / 3600.0;
+        // Get application rate (in/hr)
+        double rate = getNozzleRate();
+        // Get area (sq ft)
+        double area = getArea();
+        // Calculate gallons (1 inch of water over 1 sq ft = 0.623 gallons)
+        double inchesApplied = rate * hours;
+        return inchesApplied * area * 0.623;
     }
 }
