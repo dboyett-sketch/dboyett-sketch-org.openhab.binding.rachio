@@ -1,101 +1,46 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<thing:thing-descriptions bindingId="rachio"
+<thing-descriptions xmlns="http://eclipse.org/smarthome/schemas/thing-description/v1.0.0"
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xmlns:thing="https://openhab.org/schemas/thing-descriptions/v1.0.0">
+    xsi:schemaLocation="http://eclipse.org/smarthome/schemas/thing-description/v1.0.0
+                        https://eclipse.org/smarthome/schemas/thing-description-1.0.0.xsd">
 
-    <!-- Bridge Thing -->
-    <bridge-type id="bridge">
-        <label>Rachio Cloud Bridge</label>
-        <description>Connects to Rachio Cloud API to manage sprinkler controllers</description>
-        <category>iot</category>
-        <config-description>
-            <parameter name="apiKey" type="text" required="true">
-                <label>API Key</label>
-                <description>Rachio API Key from https://app.rach.io/</description>
-            </parameter>
-            <parameter name="pollingInterval" type="integer" min="90" max="3600">
-                <label>Polling Interval</label>
-                <description>Seconds between status updates (min 90 for rate limiting)</description>
-                <default>120</default>
-                <unit>s</unit>
-            </parameter>
-            <parameter name="defaultRuntime" type="integer" min="60" max="10800">
-                <label>Default Runtime</label>
-                <description>Default watering duration in seconds when not specified</description>
-                <default>300</default>
-                <unit>s</unit>
-            </parameter>
-            <parameter name="callbackUrl" type="text">
-                <label>Webhook Callback URL</label>
-                <description>URL for receiving webhook events (optional)</description>
-            </parameter>
-            <parameter name="clearAllCallbacks" type="boolean">
-                <label>Clear All Webhooks</label>
-                <description>Clear existing webhooks before registering new ones</description>
-                <default>false</default>
-            </parameter>
-            <parameter name="ipFilter" type="text">
-                <label>IP Filter</label>
-                <description>Comma-separated IP ranges for webhook security (e.g., 192.168.0.0/16,10.0.0.0/8)</description>
-            </parameter>
-        </config-description>
-    </bridge-type>
+    <!-- Bridge Type for Rachio Account -->
+    <thing-type id="rachio-bridge">
+        <label>Rachio Bridge</label>
+        <description>Rachio Smart Sprinkler Controller Account Bridge</description>
+        <category>irrigation</category>
+        <supported-bridge-type-refs>
+            <supported-bridge-type-ref id="rachio-bridge" />
+        </supported-bridge-type-refs>
+        <config-description-ref uri="thing-type:rachio:rachio-bridge" />
+        <representation-property>apiKey</representation-property>
+        <extensible-channel-type-id>system</extensible-channel-type-id>
+    </thing-type>
 
-    <!-- Device Thing -->
-    <thing-type id="device">
-        <label>Rachio Sprinkler Controller</label>
+    <!-- Device Type for Rachio Controller -->
+    <thing-type id="rachio-device">
+        <label>Rachio Controller</label>
         <description>Rachio Smart Sprinkler Controller Device</description>
-        <category>sprinkler</category>
-        <config-description>
-            <parameter name="deviceId" type="text" required="true">
-                <label>Device ID</label>
-                <description>Rachio Device ID (auto-discovered when bridge is configured)</description>
-            </parameter>
-        </config-description>
-        <!-- Channels removed - will be created programmatically in Java -->
+        <category>irrigation</category>
+        <supported-bridge-type-refs>
+            <supported-bridge-type-ref id="rachio-bridge" />
+        </supported-bridge-type-refs>
+        <config-description-ref uri="thing-type:rachio:rachio-device" />
+        <representation-property>deviceId</representation-property>
+        <extensible-channel-type-id>system</extensible-channel-type-id>
     </thing-type>
 
-    <!-- Zone Thing -->
-    <thing-type id="zone">
-        <label>Rachio Irrigation Zone</label>
-        <description>Individual irrigation zone on Rachio controller</description>
-        <category>sprinkler</category>
-        <config-description>
-            <parameter name="zoneId" type="text" required="true">
-                <label>Zone ID</label>
-                <description>Rachio Zone ID (auto-discovered when bridge is configured)</description>
-            </parameter>
-            <parameter name="deviceId" type="text" required="true">
-                <label>Device ID</label>
-                <description>Parent device ID for this zone</description>
-            </parameter>
-        </config-description>
-        <!-- Channels removed - will be created programmatically in Java -->
+    <!-- Zone Type for Rachio Irrigation Zone -->
+    <thing-type id="rachio-zone">
+        <label>Rachio Zone</label>
+        <description>Rachio Irrigation Zone</description>
+        <category>irrigation</category>
+        <supported-bridge-type-refs>
+            <supported-bridge-type-ref id="rachio-device" />
+        </supported-bridge-type-refs>
+        <config-description-ref uri="thing-type:rachio:rachio-zone" />
+        <representation-property>zoneId</representation-property>
+        <extensible-channel-type-id>system</extensible-channel-type-id>
     </thing-type>
 
-    <!-- Channel Type Definitions - These are still valid -->
-    <channel-type id="status">
-        <item-type>String</item-type>
-        <label>Status</label>
-        <description>Current status text</description>
-    </channel-type>
-
-    <channel-type id="switch">
-        <item-type>Switch</item-type>
-        <label>Switch</label>
-        <description>On/Off control</description>
-    </channel-type>
-
-    <channel-type id="number">
-        <item-type>Number</item-type>
-        <label>Number</label>
-        <description>Numeric value (seconds, hours, etc.)</description>
-    </channel-type>
-
-    <channel-type id="string">
-        <item-type>String</item-type>
-        <label>String</label>
-        <description>Text value</description>
-    </channel-type>
-
-</thing:thing-descriptions>
+</thing-descriptions>
