@@ -36,7 +36,7 @@ import com.google.gson.JsonParser;
  * The {@link RachioHttp} class is responsible for all HTTP communications with the Rachio Cloud API
  *
  * @author Brian G. - Initial contribution (from 2.5 binding)
- * @author Daniel B. - Major rewrite for OpenHAB 5.x
+ * @author Daniel B. - Major rewrite for OpenHAB 5.x with professional features
  */
 @Component(service = RachioHttp.class)
 @NonNullByDefault
@@ -88,9 +88,11 @@ public class RachioHttp {
             if (response.statusCode() == 200) {
                 return gson.fromJson(response.body(), RachioPerson.class);
             } else {
-                throw new RachioApiException("Failed to get person info: " + response.body());
+                logger.warn("Failed to get person info (Status {}): {}", response.statusCode(), response.body());
+                throw new RachioApiException("Failed to get person info: HTTP " + response.statusCode());
             }
         } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error getting person info: {}", e.getMessage(), e);
             throw new RachioApiException("Error getting person info", e);
         }
     }
@@ -107,9 +109,11 @@ public class RachioHttp {
                 RachioDevice[] devices = gson.fromJson(response.body(), RachioDevice[].class);
                 return List.of(devices);
             } else {
-                throw new RachioApiException("Failed to get devices: " + response.body());
+                logger.warn("Failed to get devices (Status {}): {}", response.statusCode(), response.body());
+                throw new RachioApiException("Failed to get devices: HTTP " + response.statusCode());
             }
         } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error getting devices: {}", e.getMessage(), e);
             throw new RachioApiException("Error getting devices", e);
         }
     }
@@ -125,9 +129,11 @@ public class RachioHttp {
             if (response.statusCode() == 200) {
                 return gson.fromJson(response.body(), RachioDevice.class);
             } else {
-                throw new RachioApiException("Failed to get device: " + response.body());
+                logger.warn("Failed to get device {} (Status {}): {}", deviceId, response.statusCode(), response.body());
+                throw new RachioApiException("Failed to get device: HTTP " + response.statusCode());
             }
         } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error getting device {}: {}", deviceId, e.getMessage(), e);
             throw new RachioApiException("Error getting device", e);
         }
     }
@@ -144,9 +150,12 @@ public class RachioHttp {
                 RachioZone[] zones = gson.fromJson(response.body(), RachioZone[].class);
                 return List.of(zones);
             } else {
-                throw new RachioApiException("Failed to get zones: " + response.body());
+                logger.warn("Failed to get zones for device {} (Status {}): {}", 
+                          deviceId, response.statusCode(), response.body());
+                throw new RachioApiException("Failed to get zones: HTTP " + response.statusCode());
             }
         } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error getting zones for device {}: {}", deviceId, e.getMessage(), e);
             throw new RachioApiException("Error getting zones", e);
         }
     }
@@ -184,7 +193,7 @@ public class RachioHttp {
                 logger.warn("Failed to start zone {} (Status {}): {}", zoneId, response.statusCode(), response.body());
             }
         } catch (Exception e) {
-            logger.error("Error starting zone: {}", e.getMessage(), e);
+            logger.error("Error starting zone {}: {}", zoneId, e.getMessage(), e);
         }
     }
 
@@ -228,7 +237,8 @@ public class RachioHttp {
             HttpResponse<String> response = executePut(url, getAuthHeaders(apiKey), json);
 
             if (response.statusCode() == 204) {
-                logger.debug("Successfully {} zone {} for device {}", enabled ? "enabled" : "disabled", zoneId, deviceId);
+                logger.debug("Successfully {} zone {} for device {}", 
+                          enabled ? "enabled" : "disabled", zoneId, deviceId);
             } else {
                 logger.warn("Failed to set zone enabled state (Status {}): {}", response.statusCode(), response.body());
             }
@@ -238,7 +248,7 @@ public class RachioHttp {
     }
 
     /**
-     * IMPLEMENTED: Run all zones for specified duration
+     * Run all zones for specified duration
      * Rachio API: POST /zone/start with empty zones array
      */
     public void runAllZones(String thingId, int duration, String deviceId, String apiKey) {
@@ -266,7 +276,7 @@ public class RachioHttp {
     }
 
     /**
-     * IMPLEMENTED: Set rain delay on device
+     * Set rain delay on device
      * Rachio API: PUT /device/{id}/rainDelay
      */
     public void rainDelay(String thingId, int hours, String deviceId, String apiKey) {
@@ -297,7 +307,7 @@ public class RachioHttp {
     }
 
     /**
-     * IMPLEMENTED: Run next available zone
+     * Run next available zone
      * Strategy: Check current schedule and start next non-running zone
      */
     public void runNextZone(String thingId, int duration, String deviceId, String apiKey) {
@@ -393,9 +403,12 @@ public class RachioHttp {
             if (response.statusCode() == 200) {
                 return JsonParser.parseString(response.body()).getAsJsonObject();
             } else {
-                throw new RachioApiException("Failed to get forecast: " + response.body());
+                logger.warn("Failed to get forecast for device {} (Status {}): {}", 
+                          deviceId, response.statusCode(), response.body());
+                throw new RachioApiException("Failed to get forecast: HTTP " + response.statusCode());
             }
         } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error getting forecast for device {}: {}", deviceId, e.getMessage(), e);
             throw new RachioApiException("Error getting forecast", e);
         }
     }
@@ -411,9 +424,12 @@ public class RachioHttp {
             if (response.statusCode() == 200) {
                 return JsonParser.parseString(response.body()).getAsJsonObject();
             } else {
-                throw new RachioApiException("Failed to get water usage: " + response.body());
+                logger.warn("Failed to get water usage for device {} (Status {}): {}", 
+                          deviceId, response.statusCode(), response.body());
+                throw new RachioApiException("Failed to get water usage: HTTP " + response.statusCode());
             }
         } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error getting water usage for device {}: {}", deviceId, e.getMessage(), e);
             throw new RachioApiException("Error getting water usage", e);
         }
     }
@@ -429,9 +445,12 @@ public class RachioHttp {
             if (response.statusCode() == 200) {
                 return JsonParser.parseString(response.body()).getAsJsonObject();
             } else {
-                throw new RachioApiException("Failed to get savings data: " + response.body());
+                logger.warn("Failed to get savings data for device {} (Status {}): {}", 
+                          deviceId, response.statusCode(), response.body());
+                throw new RachioApiException("Failed to get savings data: HTTP " + response.statusCode());
             }
         } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error getting savings data for device {}: {}", deviceId, e.getMessage(), e);
             throw new RachioApiException("Error getting savings data", e);
         }
     }
@@ -473,9 +492,12 @@ public class RachioHttp {
             if (response.statusCode() == 200) {
                 return JsonParser.parseString(response.body()).getAsJsonArray();
             } else {
-                throw new RachioApiException("Failed to get alerts: " + response.body());
+                logger.warn("Failed to get alerts for device {} (Status {}): {}", 
+                          deviceId, response.statusCode(), response.body());
+                throw new RachioApiException("Failed to get alerts: HTTP " + response.statusCode());
             }
         } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error getting alerts for device {}: {}", deviceId, e.getMessage(), e);
             throw new RachioApiException("Error getting alerts", e);
         }
     }
@@ -538,5 +560,75 @@ public class RachioHttp {
                 .build();
 
         return httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    /**
+     * Register webhook with Rachio API
+     */
+    public void registerWebhook(String apiKey, String webhookUrl, @Nullable String secret) throws RachioApiException {
+        try {
+            String url = BASE_URL + "/webhook";
+            
+            JsonObject webhookRequest = new JsonObject();
+            webhookRequest.addProperty("url", webhookUrl);
+            webhookRequest.addProperty("eventTypes", "DEVICE_STATUS_EVENT,ZONE_STATUS_EVENT");
+            
+            if (secret != null && !secret.isEmpty()) {
+                webhookRequest.addProperty("secret", secret);
+            }
+            
+            String jsonBody = gson.toJson(webhookRequest);
+            HttpResponse<String> response = executePost(url, getAuthHeaders(apiKey), jsonBody);
+            
+            if (response.statusCode() == 201) {
+                logger.info("Webhook registered successfully");
+            } else {
+                logger.warn("Failed to register webhook (Status {}): {}", response.statusCode(), response.body());
+                throw new RachioApiException("Failed to register webhook: HTTP " + response.statusCode());
+            }
+        } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error registering webhook: {}", e.getMessage(), e);
+            throw new RachioApiException("Error registering webhook", e);
+        }
+    }
+
+    /**
+     * Delete webhook from Rachio API
+     */
+    public void deleteWebhook(String apiKey, String webhookId) throws RachioApiException {
+        try {
+            String url = BASE_URL + "/webhook/" + webhookId;
+            HttpResponse<String> response = executeDelete(url, getAuthHeaders(apiKey));
+            
+            if (response.statusCode() == 204) {
+                logger.info("Webhook {} deleted successfully", webhookId);
+            } else {
+                logger.warn("Failed to delete webhook (Status {}): {}", response.statusCode(), response.body());
+                throw new RachioApiException("Failed to delete webhook: HTTP " + response.statusCode());
+            }
+        } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error deleting webhook: {}", e.getMessage(), e);
+            throw new RachioApiException("Error deleting webhook", e);
+        }
+    }
+
+    /**
+     * List webhooks from Rachio API
+     */
+    public @Nullable JsonArray listWebhooks(String apiKey) throws RachioApiException {
+        try {
+            String url = BASE_URL + "/webhook";
+            HttpResponse<String> response = executeGet(url, getAuthHeaders(apiKey));
+            
+            if (response.statusCode() == 200) {
+                return JsonParser.parseString(response.body()).getAsJsonArray();
+            } else {
+                logger.warn("Failed to list webhooks (Status {}): {}", response.statusCode(), response.body());
+                throw new RachioApiException("Failed to list webhooks: HTTP " + response.statusCode());
+            }
+        } catch (IOException | InterruptedException | URISyntaxException e) {
+            logger.error("Error listing webhooks: {}", e.getMessage(), e);
+            throw new RachioApiException("Error listing webhooks", e);
+        }
     }
 }
