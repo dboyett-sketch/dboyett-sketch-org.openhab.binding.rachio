@@ -81,7 +81,7 @@ public class RachioHttp {
         }
         
         double getUsagePercentage() {
-            return ((double) (limit - remaining) / limit) * 100.0;
+            return limit > 0 ? ((double) (limit - remaining) / limit) * 100.0 : 0.0;
         }
     }
 
@@ -159,7 +159,7 @@ public class RachioHttp {
     /**
      * Parse rate limiting headers from response
      */
-    private void parseRateLimitHeaders(HttpHeaders headers, String endpoint) {
+    private void parseRateLimitHeaders(java.net.http.HttpHeaders headers, String endpoint) {
         try {
             // Extract device ID from endpoint if possible
             String deviceId = "unknown";
@@ -176,33 +176,39 @@ public class RachioHttp {
             RateLimitInfo info = rateLimitInfo.computeIfAbsent(deviceId, RateLimitInfo::new);
             
             // Parse standard rate limit headers
-            String remainingStr = headers.firstValue("X-RateLimit-Remaining").orElse(null);
-            String limitStr = headers.firstValue("X-RateLimit-Limit").orElse(null);
-            String resetStr = headers.firstValue("X-RateLimit-Reset").orElse(null);
+            List<String> remainingList = headers.allValues("X-RateLimit-Remaining");
+            List<String> limitList = headers.allValues("X-RateLimit-Limit");
+            List<String> resetList = headers.allValues("X-RateLimit-Reset");
             
-            if (remainingStr != null) {
+            if (!remainingList.isEmpty()) {
                 try {
-                    info.remaining = Integer.parseInt(remainingStr);
+                    info.remaining = Integer.parseInt(remainingList.get(0));
                 } catch (NumberFormatException e) {
-                    logger.debug("Invalid X-RateLimit-Remaining header: {}", remainingStr);
+                    logger.debug("Invalid X-RateLimit-Remaining header: {}", remainingList.get(0));
                 }
             }
             
-            if (limitStr != null) {
+            if (!limitList.isEmpty()) {
                 try {
-                    info.limit = Integer.parseInt(limitStr);
+                    info.limit = Integer.parseInt(limitList.get(0));
                 } catch (NumberFormatException e) {
-                    logger.debug("Invalid X-RateLimit-Limit header: {}", limitStr);
+                    logger.debug("Invalid X-RateLimit-Limit header: {}", limitList.get(0));
                 }
             }
             
-            if (resetStr != null) {
+            if (!resetList.isEmpty()) {
                 try {
                     // Parse ISO 8601 timestamp
-                    Instant resetInstant = Instant.parse(resetStr);
+                    Instant resetInstant = Instant.parse(resetList.get(0));
                     info.resetTime = resetInstant;
                 } catch (Exception e) {
-                    logger.debug("Invalid X-RateLimit-Reset header: {}", resetStr);
+                    // Try parsing as Unix timestamp
+                    try {
+                        long resetSeconds = Long.parseLong(resetList.get(0));
+                        info.resetTime = Instant.ofEpochSecond(resetSeconds);
+                    } catch (Exception e2) {
+                        logger.debug("Invalid X-RateLimit-Reset header: {}", resetList.get(0));
+                    }
                 }
             }
             
@@ -231,7 +237,11 @@ public class RachioHttp {
                 }
             } catch (Exception e) {
                 // If we can't parse the error, use the raw response
-                errorMessage = "HTTP " + statusCode + ": " + responseBody;
+                if (responseBody.length() > 100) {
+                    errorMessage = "HTTP " + statusCode + ": " + responseBody.substring(0, 100) + "...";
+                } else {
+                    errorMessage = "HTTP " + statusCode + ": " + responseBody;
+                }
             }
         } else {
             errorMessage = "HTTP " + statusCode + " for endpoint: " + endpoint;
@@ -307,10 +317,14 @@ public class RachioHttp {
     }
 
     /**
-     * IMPLEMENTED: Run all zones sequentially
+     * Run all zones sequentially
      */
     public void runAllZones(String thingId, int duration, String deviceId) throws RachioApiException {
         logger.info("Running all zones on device {} for {} seconds", deviceId, duration);
+        
+        if (duration <= 0) {
+            throw new RachioApiException("Duration must be greater than 0");
+        }
         
         // Get device details to find all zones
         RachioDevice device = getDevice(deviceId);
@@ -330,14 +344,20 @@ public class RachioHttp {
             return;
         }
         
+        logger.info("Running {} enabled zones sequentially", enabledZones.size());
+        
         // Start each enabled zone sequentially
         for (String zoneId : enabledZones) {
             try {
+                logger.debug("Starting zone {} for {} seconds", zoneId, duration);
                 startZone(zoneId, duration);
-                logger.debug("Started zone {} for {} seconds", zoneId, duration);
                 
                 // Wait for the duration before starting next zone
-                Thread.sleep(duration * 1000L);
+                // Note: This is a simplified approach. In production, you might want
+                // to check zone completion via webhooks instead of sleeping
+                if (enabledZones.size() > 1) { // Only wait if there are multiple zones
+                    Thread.sleep(duration * 1000L);
+                }
                 
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
@@ -352,7 +372,7 @@ public class RachioHttp {
     }
 
     /**
-     * IMPLEMENTED: Set rain delay
+     * Set rain delay
      */
     public void rainDelay(String thingId, int hours, String deviceId) throws RachioApiException {
         logger.info("Setting rain delay on device {} for {} hours", deviceId, hours);
@@ -367,17 +387,20 @@ public class RachioHttp {
         
         makeRequest("PUT", "/device/rain_delay", gson.toJson(body));
         
-        // Cancel rain delay if hours is 0
         if (hours == 0) {
             logger.debug("Rain delay cancelled for device {}", deviceId);
         }
     }
 
     /**
-     * IMPLEMENTED: Run next zone
+     * Run next zone
      */
     public void runNextZone(String thingId, int duration, String deviceId) throws RachioApiException {
         logger.info("Running next zone on device {} for {} seconds", deviceId, duration);
+        
+        if (duration <= 0) {
+            throw new RachioApiException("Duration must be greater than 0");
+        }
         
         // Get device details
         RachioDevice device = getDevice(deviceId);
@@ -385,9 +408,7 @@ public class RachioHttp {
             throw new RachioApiException("Could not retrieve device zones");
         }
         
-        // Find the first enabled zone that's not currently running
-        // Note: This is a simplified implementation - in production you'd want 
-        // to check actual running status from device state
+        // Find the first enabled zone
         for (RachioZone zone : device.zones) {
             if (zone.enabled) {
                 try {
@@ -412,9 +433,11 @@ public class RachioHttp {
         body.addProperty("url", url);
         body.addProperty("externalId", externalId);
         body.addProperty("deviceId", deviceId);
-        body.addProperty("eventTypes", "DEVICE_STATUS_EVENT,ZONE_STATUS_EVENT,SCHEDULE_STATUS_EVENT");
+        // Register for all important events
+        body.addProperty("eventTypes", "DEVICE_STATUS_EVENT,ZONE_STATUS_EVENT,SCHEDULE_STATUS_EVENT,RAIN_DELAY_EVENT,WEATHER_INTELLIGENCE_EVENT,WATER_BUDGET_EVENT,RAIN_SENSOR_DETECTION_EVENT");
         
         makeRequest("POST", "/webhook", gson.toJson(body));
+        logger.info("Registered webhook for device {} with URL {}", deviceId, url);
     }
 
     /**
@@ -425,6 +448,7 @@ public class RachioHttp {
         body.addProperty("id", webhookId);
         
         makeRequest("DELETE", "/webhook", gson.toJson(body));
+        logger.info("Deleted webhook {}", webhookId);
     }
 
     /**
@@ -475,20 +499,19 @@ public class RachioHttp {
         return info != null && info.isLimited();
     }
     
-    // Helper class for HttpHeaders since we need to extract multiple values
-    private static class HttpHeaders {
-        private final Map<String, List<String>> headers;
-        
-        HttpHeaders(java.net.http.HttpHeaders original) {
-            this.headers = new HashMap<>();
-            original.map().forEach((key, values) -> {
-                headers.put(key.toLowerCase(), new ArrayList<>(values));
-            });
-        }
-        
-        @Nullable String firstValue(String headerName) {
-            List<String> values = headers.get(headerName.toLowerCase());
-            return values != null && !values.isEmpty() ? values.get(0) : null;
-        }
+    /**
+     * Get watering history for a zone
+     * Optional: Not in original but useful
+     */
+    public @Nullable JsonElement getZoneWateringHistory(String zoneId, int days) throws RachioApiException {
+        return makeRequest("GET", "/zone/" + zoneId + "/watering?days=" + days, null);
+    }
+    
+    /**
+     * Get device forecast
+     * Optional: Not in original but useful
+     */
+    public @Nullable JsonElement getDeviceForecast(String deviceId) throws RachioApiException {
+        return makeRequest("GET", "/device/" + deviceId + "/forecast", null);
     }
 }
