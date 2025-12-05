@@ -4,59 +4,202 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
 /**
- * The {@link RachioDeviceConfiguration} class contains fields mapping device configuration parameters.
+ * Configuration class for Rachio Device
  *
- * @author Brian G. - Initial contribution (from 2.5 binding)
- * @author Daniel B. - Major rewrite for OpenHAB 5.x
+ * @author Dave Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioDeviceConfiguration {
-    // Required: Device ID from Rachio
-    public String deviceId = "";
 
-    // Optional: Device name override
-    public @Nullable String deviceName;
-
-    // Optional: Polling configuration
-    public int pollingInterval = 120; // seconds
-    public boolean autoRefresh = true;
-
-    // Optional: Professional features
-    public boolean monitorForecast = true;
-    public int forecastUpdateInterval = 3600; // seconds
-    public boolean monitorWaterUsage = true;
-    public int waterUsageUpdateInterval = 7200; // seconds
-    public boolean monitorSavings = true;
-    public boolean monitorAlerts = true;
-    public int alertsUpdateInterval = 300; // seconds
-    public boolean monitorSchedules = true;
-
-    // Optional: Control settings
-    public int defaultZoneRuntime = 600; // seconds (10 minutes)
-    public int maxZoneRuntime = 7200; // seconds (2 hours)
-    public int minZoneRuntime = 60; // seconds (1 minute)
-    public boolean confirmStopWatering = true;
-    public boolean confirmRainDelay = true;
-
-    // Optional: Display settings
-    public @Nullable String displayUnits; // "imperial" or "metric"
-    public boolean showAdvancedChannels = false;
-    public boolean groupByCategory = true;
-
-    // Optional: Notification settings
-    public boolean notifyZoneStart = false;
-    public boolean notifyZoneComplete = false;
-    public boolean notifyRainDelay = true;
-    public boolean notifyDeviceOffline = true;
-    public boolean notifyAlerts = true;
-
+    // Required configuration
+    public @Nullable String deviceId;
+    
+    // Optional configuration
+    public @Nullable String customName;
+    public int pollInterval = 120; // 2 minutes in seconds
+    public boolean enableZoneDiscovery = true;
+    public boolean enableStatusMonitoring = true;
+    public boolean enableEventHistory = true;
+    public int eventHistoryHours = 24;
+    
+    // Advanced configuration
+    public boolean enableWaterUsageTracking = false;
+    public boolean enableSavingsTracking = false;
+    public boolean enableForecastIntegration = false;
+    public boolean enableAlertMonitoring = false;
+    
+    // Device-specific overrides
+    public int maxZoneRuntimeOverride = 0; // 0 = use default
+    public int defaultRainDelayOverride = 0; // 0 = use default
+    public boolean forceOnlineStatus = false;
+    
+    // Validation Methods
+    
+    /**
+     * Validate the configuration
+     * @return true if configuration is valid
+     */
+    public boolean isValid() {
+        return deviceId != null && !deviceId.trim().isEmpty();
+    }
+    
+    /**
+     * Get device ID with null safety
+     */
+    public String getDeviceId() {
+        String id = deviceId;
+        return id != null ? id.trim() : "";
+    }
+    
+    /**
+     * Get custom name with null safety
+     */
+    public String getCustomName() {
+        String name = customName;
+        return name != null ? name.trim() : "";
+    }
+    
+    /**
+     * Get display name (custom name if set, otherwise device ID)
+     */
+    public String getDisplayName() {
+        String custom = getCustomName();
+        if (!custom.isEmpty()) {
+            return custom;
+        }
+        String id = getDeviceId();
+        return !id.isEmpty() ? id : "Unknown Device";
+    }
+    
+    /**
+     * Validate poll interval is within bounds
+     */
+    public void validatePollInterval() {
+        if (pollInterval < 30) {
+            pollInterval = 30; // Minimum 30 seconds
+        }
+        if (pollInterval > 1800) {
+            pollInterval = 1800; // Maximum 30 minutes for device
+        }
+    }
+    
+    /**
+     * Validate event history hours
+     */
+    public void validateEventHistory() {
+        if (eventHistoryHours < 1) {
+            eventHistoryHours = 1; // Minimum 1 hour
+        }
+        if (eventHistoryHours > 168) {
+            eventHistoryHours = 168; // Maximum 1 week
+        }
+    }
+    
+    /**
+     * Check if zone discovery is enabled
+     */
+    public boolean isZoneDiscoveryEnabled() {
+        return enableZoneDiscovery;
+    }
+    
+    /**
+     * Check if status monitoring is enabled
+     */
+    public boolean isStatusMonitoringEnabled() {
+        return enableStatusMonitoring;
+    }
+    
+    /**
+     * Check if event history is enabled
+     */
+    public boolean isEventHistoryEnabled() {
+        return enableEventHistory;
+    }
+    
+    /**
+     * Check if water usage tracking is enabled
+     */
+    public boolean isWaterUsageTrackingEnabled() {
+        return enableWaterUsageTracking;
+    }
+    
+    /**
+     * Check if savings tracking is enabled
+     */
+    public boolean isSavingsTrackingEnabled() {
+        return enableSavingsTracking;
+    }
+    
+    /**
+     * Check if forecast integration is enabled
+     */
+    public boolean isForecastIntegrationEnabled() {
+        return enableForecastIntegration;
+    }
+    
+    /**
+     * Check if alert monitoring is enabled
+     */
+    public boolean isAlertMonitoringEnabled() {
+        return enableAlertMonitoring;
+    }
+    
+    /**
+     * Get max zone runtime (override or 0 for default)
+     */
+    public int getMaxZoneRuntime() {
+        return maxZoneRuntimeOverride > 0 ? maxZoneRuntimeOverride : 0;
+    }
+    
+    /**
+     * Get default rain delay (override or 0 for default)
+     */
+    public int getDefaultRainDelay() {
+        return defaultRainDelayOverride >= 0 ? defaultRainDelayOverride : -1;
+    }
+    
+    /**
+     * Check if forced online status is enabled
+     */
+    public boolean isForceOnlineStatusEnabled() {
+        return forceOnlineStatus;
+    }
+    
+    /**
+     * Get configuration as string for logging
+     */
     @Override
     public String toString() {
-        return "RachioDeviceConfiguration [deviceId=" + deviceId +
-                ", deviceName=" + deviceName +
-                ", pollingInterval=" + pollingInterval +
-                ", monitorForecast=" + monitorForecast +
-                ", monitorWaterUsage=" + monitorWaterUsage +
-                "]";
+        return "RachioDeviceConfiguration{" +
+                "deviceId='" + getDeviceId() + '\'' +
+                ", customName='" + getCustomName() + '\'' +
+                ", pollInterval=" + pollInterval +
+                ", enableZoneDiscovery=" + enableZoneDiscovery +
+                ", enableStatusMonitoring=" + enableStatusMonitoring +
+                ", enableEventHistory=" + enableEventHistory +
+                ", eventHistoryHours=" + eventHistoryHours +
+                ", enableWaterUsageTracking=" + enableWaterUsageTracking +
+                ", enableSavingsTracking=" + enableSavingsTracking +
+                ", enableForecastIntegration=" + enableForecastIntegration +
+                ", enableAlertMonitoring=" + enableAlertMonitoring +
+                ", maxZoneRuntimeOverride=" + maxZoneRuntimeOverride +
+                ", defaultRainDelayOverride=" + defaultRainDelayOverride +
+                ", forceOnlineStatus=" + forceOnlineStatus +
+                '}';
+    }
+    
+    /**
+     * Get configuration summary for status display
+     */
+    public String getSummary() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Device ID: ").append(getDeviceId());
+        if (!getCustomName().isEmpty()) {
+            sb.append(" (").append(getCustomName()).append(")");
+        }
+        sb.append(", Polling: ").append(pollInterval).append("s");
+        sb.append(", Zones: ").append(enableZoneDiscovery ? "Auto-discover" : "Manual");
+        sb.append(", Events: ").append(enableEventHistory ? eventHistoryHours + "h" : "Disabled");
+        return sb.toString();
     }
 }
