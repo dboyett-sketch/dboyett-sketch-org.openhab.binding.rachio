@@ -48,7 +48,7 @@ import org.slf4j.LoggerFactory;
  * The {@link RachioZoneHandler} is responsible for handling commands for zone things
  *
  * @author Brian G. - Initial contribution (from 2.5 binding)
- * @author Daniel B. - Major rewrite for OpenHAB 5.x
+ * @author Daniel B. - Major rewrite for OpenHAB 5.x with professional features
  */
 @Component(service = RachioZoneHandler.class, configurationPid = "handler.rachiozone")
 @NonNullByDefault
@@ -96,19 +96,34 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
             return;
         }
 
+        // Register with bridge for status updates
+        bridge.registerStatusListener(this);
+
         // Create dynamic channels for professional data
         createProfessionalDataChannels();
 
         // Start polling
         startPolling();
 
+        // Initial state update
+        scheduler.execute(this::pollZoneState);
+
         updateStatus(ThingStatus.ONLINE);
+        logger.info("Zone handler initialized for zone {} on device {}", config.zoneId, config.deviceId);
     }
 
     @Override
     public void dispose() {
         stopPolling();
+
+        // Unregister from bridge
+        RachioBridgeHandler bridge = getBridgeHandler();
+        if (bridge != null) {
+            bridge.unregisterStatusListener(this);
+        }
+
         super.dispose();
+        logger.debug("Zone handler disposed for {}", getThing().getUID());
     }
 
     /**
@@ -138,43 +153,50 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
     private void createProfessionalDataChannels() {
         logger.debug("Creating professional data channels for zone {}", config != null ? config.zoneId : "unknown");
 
-        // Soil Data Channels
+        // Professional Irrigation Data Channels
         createReadOnlyChannel(CHANNEL_ZONE_SOIL_TYPE, CHANNEL_TYPE_UID_STRING,
-                "Soil Type", "Soil composition type", "text");
-
-        // Crop Data Channels
+                "Soil Type", "Soil composition type", "text", CATEGORY_SOIL);
+        
         createReadOnlyChannel(CHANNEL_ZONE_CROP_TYPE, CHANNEL_TYPE_UID_STRING,
-                "Crop Type", "Type of vegetation/grass", "text");
+                "Crop Type", "Type of vegetation/grass", "text", CATEGORY_CROP);
+        
         createReadOnlyChannel(CHANNEL_ZONE_CROP_COEFFICIENT, CHANNEL_TYPE_UID_NUMBER,
-                "Crop Coefficient", "Evapotranspiration coefficient (0-1)", "number:dimensionless");
-
-        // Nozzle Data Channels
+                "Crop Coefficient", "Evapotranspiration coefficient (0-1)", "number:dimensionless", CATEGORY_CROP);
+        
         createReadOnlyChannel(CHANNEL_ZONE_NOZZLE_TYPE, CHANNEL_TYPE_UID_STRING,
-                "Nozzle Type", "Sprinkler nozzle model", "text");
+                "Nozzle Type", "Sprinkler nozzle model", "text", CATEGORY_EQUIPMENT);
+        
         createReadOnlyChannel(CHANNEL_ZONE_NOZZLE_RATE, CHANNEL_TYPE_UID_NUMBER,
-                "Nozzle Rate", "Application rate (inches/hour)", "number:velocity");
-
-        // Slope and Shade Channels
+                "Nozzle Rate", "Application rate (inches/hour)", "number:velocity", CATEGORY_EQUIPMENT);
+        
         createReadOnlyChannel(CHANNEL_ZONE_SLOPE_TYPE, CHANNEL_TYPE_UID_STRING,
-                "Slope", "Ground slope category", "text");
+                "Slope", "Ground slope category", "text", CATEGORY_SITE);
+        
         createReadOnlyChannel(CHANNEL_ZONE_SHADE_TYPE, CHANNEL_TYPE_UID_STRING,
-                "Shade", "Shade coverage category", "text");
-
-        // Numeric Professional Data Channels
+                "Shade", "Shade coverage category", "text", CATEGORY_SITE);
+        
         createReadOnlyChannel(CHANNEL_ZONE_ROOT_DEPTH, CHANNEL_TYPE_UID_NUMBER,
-                "Root Depth", "Plant root zone depth", "number:length");
+                "Root Depth", "Plant root zone depth", "number:length", CATEGORY_PLANT);
+        
         createReadOnlyChannel(CHANNEL_ZONE_EFFICIENCY, CHANNEL_TYPE_UID_NUMBER,
-                "Efficiency", "Irrigation system efficiency", "number:dimensionless");
+                "Efficiency", "Irrigation system efficiency", "number:dimensionless", CATEGORY_PERFORMANCE);
+        
         createReadOnlyChannel(CHANNEL_ZONE_AREA, CHANNEL_TYPE_UID_NUMBER,
-                "Area", "Zone area", "number:area");
+                "Area", "Zone area", "number:area", CATEGORY_MEASUREMENTS);
+        
+        createReadOnlyChannel(CHANNEL_ZONE_AVAILABLE_WATER, CHANNEL_TYPE_UID_NUMBER,
+                "Available Water", "Available water in root zone", "number:length", CATEGORY_WATER);
+        
+        createReadOnlyChannel(CHANNEL_ZONE_WATER_BUDGET, CHANNEL_TYPE_UID_NUMBER,
+                "Water Budget", "Current water budget percentage", "number:dimensionless", CATEGORY_WATER);
 
         // Water Adjustment Runtimes (levels 1-5)
         for (int i = 1; i <= 5; i++) {
-            String channelId = String.format(CHANNEL_ZONE_WATER_ADJUSTMENT, i);
+            String channelId = getWaterAdjustmentChannelId(i);
             createReadOnlyChannel(channelId, CHANNEL_TYPE_UID_NUMBER,
                     String.format("Water Adjustment %d", i),
                     String.format("Watering adjustment runtime level %d", i),
-                    "number:time");
+                    "number:time", CATEGORY_WATER);
         }
 
         logger.debug("Professional data channels created for zone {}", config != null ? config.zoneId : "unknown");
@@ -184,7 +206,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
      * Create a read-only channel
      */
     private void createReadOnlyChannel(String channelId, ChannelTypeUID channelTypeUID,
-            String label, String description, String itemType) {
+            String label, String description, String itemType, String category) {
         ChannelUID uid = new ChannelUID(getThing().getUID(), channelId);
 
         // Check if channel already exists
@@ -196,6 +218,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 .withType(channelTypeUID)
                 .withLabel(label)
                 .withDescription(description)
+                .withCategory(category)
                 .build();
 
         updateThing(editThing().withChannel(channel).build());
@@ -234,7 +257,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
             String apiKey = getApiKey();
 
             if (localConfig == null || apiKey == null || apiKey.isEmpty()) {
-                logger.debug("Cannot poll zone state: configuration missing");
+                logger.debug("Cannot poll zone state: configuration or API key missing");
                 return;
             }
 
@@ -249,11 +272,15 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 updateZoneState(zone);
                 lastZoneState = zone;
                 lastUpdate = ZonedDateTime.now();
+                updateStatus(ThingStatus.ONLINE);
             } else {
                 logger.warn("Zone {} not found in device {}", localConfig.zoneId, localConfig.deviceId);
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
+                        "Zone not found in device");
             }
         } catch (Exception e) {
             logger.debug("Error polling zone state: {}", e.getMessage(), e);
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
     }
 
@@ -285,6 +312,12 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         // Update water budget if available
         if (zone.getWaterBudget() != null) {
             updateState(CHANNEL_ZONE_WATER_BUDGET, new QuantityType<>(zone.getWaterBudget(), Units.PERCENT));
+        }
+
+        // Update available water if present
+        if (zone.getAvailableWater() != null) {
+            updateState(CHANNEL_ZONE_AVAILABLE_WATER,
+                    new QuantityType<>(zone.getAvailableWater(), ImperialUnits.INCH));
         }
 
         logger.debug("Zone {} state updated: name={}, enabled={}, status={}",
@@ -348,15 +381,11 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         if (zone.getWateringAdjustmentRuntimes() != null) {
             Integer[] adjustments = zone.getWateringAdjustmentRuntimes();
             for (int i = 0; i < Math.min(adjustments.length, 5); i++) {
-                String channelId = String.format(CHANNEL_ZONE_WATER_ADJUSTMENT, i + 1);
-                updateState(channelId, new QuantityType<>(adjustments[i], Units.SECOND));
+                String channelId = getWaterAdjustmentChannelId(i + 1);
+                if (adjustments[i] != null) {
+                    updateState(channelId, new QuantityType<>(adjustments[i], Units.SECOND));
+                }
             }
-        }
-
-        // Available water if present
-        if (zone.getAvailableWater() != null) {
-            updateState(CHANNEL_ZONE_AVAILABLE_WATER,
-                    new QuantityType<>(zone.getAvailableWater(), ImperialUnits.INCH));
         }
     }
 
@@ -366,7 +395,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         String apiKey = getApiKey();
 
         if (localConfig == null || apiKey == null || apiKey.isEmpty()) {
-            logger.warn("Cannot handle command: configuration missing");
+            logger.warn("Cannot handle command: configuration or API key missing");
             return;
         }
 
@@ -397,6 +426,8 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 case CHANNEL_ZONE_START:
                     if (command instanceof DecimalType) {
                         int duration = ((DecimalType) command).intValue();
+                        // Ensure duration is within bounds
+                        duration = Math.max(MIN_ZONE_RUNTIME, Math.min(duration, MAX_ZONE_RUNTIME));
                         rachioHttp.startZone(getThing().getUID().getId(), localConfig.zoneId,
                                 duration, localConfig.deviceId, apiKey);
                     }
@@ -405,15 +436,18 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 case CHANNEL_ZONE_STOP:
                     if (command instanceof OnOffType && command == OnOffType.ON) {
                         rachioHttp.stopWatering(getThing().getUID().getId(), localConfig.deviceId, apiKey);
+                        // Turn switch back off after command
+                        scheduler.schedule(() -> updateState(channelUID, OnOffType.OFF), 1, TimeUnit.SECONDS);
                     }
                     break;
 
                 case CHANNEL_ZONE_RUNTIME:
                     if (command instanceof DecimalType) {
                         int duration = ((DecimalType) command).intValue();
-                        // This would typically update the default runtime configuration
-                        // For now, just log it
+                        // Update configuration if needed
                         logger.debug("Zone {} runtime set to {} seconds", localConfig.zoneId, duration);
+                        // Note: This would typically update the default runtime configuration
+                        // For now, just log it and the next poll will update the state
                     }
                     break;
 
@@ -430,7 +464,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
     public void handleConfigurationUpdate(Map<String, Object> configurationParameters) {
         super.handleConfigurationUpdate(configurationParameters);
         // Re-create channels if configuration changed
-        createProfessionalDataChannels();
+        scheduler.schedule(this::createProfessionalDataChannels, 1, TimeUnit.SECONDS);
     }
 
     @Override
@@ -444,6 +478,8 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         if (status == ThingStatus.ONLINE) {
             updateStatus(ThingStatus.ONLINE);
             startPolling();
+            // Refresh state when bridge comes online
+            scheduler.execute(this::pollZoneState);
         } else {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE);
             stopPolling();
@@ -454,6 +490,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
     public void onZoneStateUpdated(RachioZone zone) {
         // Called when webhook or bridge updates zone state
         if (config != null && zone.getId().equals(config.zoneId)) {
+            logger.debug("Zone state updated via webhook for {}", zone.getId());
             updateZoneState(zone);
             lastZoneState = zone;
             lastUpdate = ZonedDateTime.now();
@@ -485,5 +522,12 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
      */
     public @Nullable RachioZoneConfiguration getZoneConfig() {
         return config;
+    }
+
+    /**
+     * Get water adjustment channel ID for a specific level (1-5)
+     */
+    private String getWaterAdjustmentChannelId(int level) {
+        return RachioBindingConstants.getWaterAdjustmentChannelId(level);
     }
 }
