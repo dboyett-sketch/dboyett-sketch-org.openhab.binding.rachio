@@ -2,446 +2,230 @@ package org.openhab.binding.rachio.internal.api;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.handler.RachioBridgeHandler;
-import org.openhab.core.automation.annotation.ActionInput;
-import org.openhab.core.automation.annotation.ActionOutput;
-import org.openhab.core.automation.annotation.RuleAction;
-import org.openhab.core.thing.binding.ThingActions;
-import org.openhab.core.thing.binding.ThingActionsScope;
-import org.openhab.core.thing.binding.ThingHandler;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.openhab.binding.rachio.internal.api.dto.RachioAlert;
+import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
+import org.openhab.binding.rachio.internal.api.dto.RachioEventSummary;
+import org.openhab.binding.rachio.internal.api.dto.RachioForecast;
+import org.openhab.binding.rachio.internal.api.dto.RachioPerson;
+import org.openhab.binding.rachio.internal.api.dto.RachioSchedule;
+import org.openhab.binding.rachio.internal.api.dto.RachioUsage;
+import org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent;
+import org.openhab.binding.rachio.internal.api.dto.RachioZone;
+import org.openhab.binding.rachio.internal.api.dto.ZoneRunStatus;
 
+import java.util.List;
 import java.util.Map;
 
 /**
- * The {@link RachioActions} class defines rule actions for the Rachio binding.
+ * Interface defining Rachio actions that can be performed from rules or scripts.
+ * This provides a clean API for interacting with Rachio devices.
  *
  * @author Dave Boyett - Initial contribution
  */
-@ThingActionsScope(name = "rachio")
 @NonNullByDefault
-public class RachioActions implements ThingActions {
-
-    private final Logger logger = LoggerFactory.getLogger(RachioActions.class);
-    private @Nullable RachioBridgeHandler handler;
-
-    @Override
-    public void setThingHandler(@Nullable ThingHandler handler) {
-        if (handler instanceof RachioBridgeHandler) {
-            this.handler = (RachioBridgeHandler) handler;
-        }
-    }
-
-    @Override
-    public @Nullable ThingHandler getThingHandler() {
-        return handler;
-    }
+public interface RachioActions {
 
     /**
-     * Start a zone for a specific duration
+     * Start watering a specific zone
+     *
+     * @param thingId The OpenHAB thing ID
+     * @param zoneId The Rachio zone ID
+     * @param duration Duration in seconds
+     * @param deviceId The Rachio device ID
      */
-    @RuleAction(label = "Start Zone", description = "Start a Rachio zone for specified duration")
-    @ActionOutput(name = "success", label = "Success", type = "java.lang.Boolean", description = "True if the command was successful")
-    public Map<String, Object> startZone(
-            @ActionInput(name = "zoneId", label = "Zone ID", required = true, description = "The ID of the zone to start") String zoneId,
-            @ActionInput(name = "duration", label = "Duration", required = true, description = "Duration in seconds") int duration) {
-        
-        logger.debug("Action: startZone called with zoneId={}, duration={}", zoneId, duration);
-        boolean success = false;
-        
-        try {
-            RachioBridgeHandler localHandler = handler;
-            if (localHandler != null) {
-                localHandler.getHttpHandler().startZone(zoneId, duration);
-                success = true;
-                logger.info("Started zone {} for {} seconds", zoneId, duration);
-            } else {
-                logger.warn("Handler not available for startZone action");
-            }
-        } catch (RachioApiException e) {
-            logger.error("Failed to start zone: {}", e.getMessage(), e);
-        }
-        
-        return Map.of("success", success);
-    }
+    void startZone(String thingId, String zoneId, int duration, String deviceId);
 
     /**
-     * Run all zones sequentially
+     * Stop all watering on a device
+     *
+     * @param thingId The OpenHAB thing ID
+     * @param deviceId The Rachio device ID
      */
-    @RuleAction(label = "Run All Zones", description = "Run all enabled zones sequentially for specified duration")
-    @ActionOutput(name = "success", label = "Success", type = "java.lang.Boolean", description = "True if the command was successful")
-    public Map<String, Object> runAllZones(
-            @ActionInput(name = "duration", label = "Duration", required = true, description = "Duration in seconds for each zone") int duration) {
-        
-        logger.debug("Action: runAllZones called with duration={}", duration);
-        boolean success = false;
-        
-        try {
-            RachioBridgeHandler localHandler = handler;
-            if (localHandler != null && localHandler.getBridgeConfiguration() != null) {
-                String thingId = localHandler.getThing().getUID().getId();
-                String deviceId = localHandler.getBridgeConfiguration().deviceId;
-                
-                if (deviceId != null && !deviceId.isEmpty()) {
-                    localHandler.getHttpHandler().runAllZones(thingId, duration, deviceId);
-                    success = true;
-                    logger.info("Running all zones for {} seconds each", duration);
-                } else {
-                    logger.warn("Device ID not configured for runAllZones action");
-                }
-            } else {
-                logger.warn("Handler not available for runAllZones action");
-            }
-        } catch (RachioApiException e) {
-            logger.error("Failed to run all zones: {}", e.getMessage(), e);
-        }
-        
-        return Map.of("success", success);
-    }
+    void stopWatering(String thingId, String deviceId);
 
     /**
-     * Run the next available zone
+     * Run all zones sequentially with the same duration
+     *
+     * @param thingId The OpenHAB thing ID
+     * @param duration Duration in seconds for each zone
+     * @param deviceId The Rachio device ID
      */
-    @RuleAction(label = "Run Next Zone", description = "Run the next available zone for specified duration")
-    @ActionOutput(name = "success", label = "Success", type = "java.lang.Boolean", description = "True if the command was successful")
-    public Map<String, Object> runNextZone(
-            @ActionInput(name = "duration", label = "Duration", required = true, description = "Duration in seconds") int duration) {
-        
-        logger.debug("Action: runNextZone called with duration={}", duration);
-        boolean success = false;
-        
-        try {
-            RachioBridgeHandler localHandler = handler;
-            if (localHandler != null && localHandler.getBridgeConfiguration() != null) {
-                String thingId = localHandler.getThing().getUID().getId();
-                String deviceId = localHandler.getBridgeConfiguration().deviceId;
-                
-                if (deviceId != null && !deviceId.isEmpty()) {
-                    localHandler.getHttpHandler().runNextZone(thingId, duration, deviceId);
-                    success = true;
-                    logger.info("Running next zone for {} seconds", duration);
-                } else {
-                    logger.warn("Device ID not configured for runNextZone action");
-                }
-            } else {
-                logger.warn("Handler not available for runNextZone action");
-            }
-        } catch (RachioApiException e) {
-            logger.error("Failed to run next zone: {}", e.getMessage(), e);
-        }
-        
-        return Map.of("success", success);
-    }
+    void runAllZones(String thingId, int duration, String deviceId);
 
     /**
-     * Set rain delay
+     * Set a rain delay on a device
+     *
+     * @param thingId The OpenHAB thing ID
+     * @param hours Number of hours to delay watering
+     * @param deviceId The Rachio device ID
      */
-    @RuleAction(label = "Set Rain Delay", description = "Set rain delay for specified hours (0-168)")
-    @ActionOutput(name = "success", label = "Success", type = "java.lang.Boolean", description = "True if the command was successful")
-    public Map<String, Object> rainDelay(
-            @ActionInput(name = "hours", label = "Hours", required = true, description = "Hours to delay (0-168, 0 to cancel)") int hours) {
-        
-        logger.debug("Action: rainDelay called with hours={}", hours);
-        boolean success = false;
-        
-        if (hours < 0 || hours > 168) {
-            logger.warn("Invalid rain delay hours: {} (must be 0-168)", hours);
-            return Map.of("success", false);
-        }
-        
-        try {
-            RachioBridgeHandler localHandler = handler;
-            if (localHandler != null && localHandler.getBridgeConfiguration() != null) {
-                String thingId = localHandler.getThing().getUID().getId();
-                String deviceId = localHandler.getBridgeConfiguration().deviceId;
-                
-                if (deviceId != null && !deviceId.isEmpty()) {
-                    localHandler.getHttpHandler().rainDelay(thingId, hours, deviceId);
-                    success = true;
-                    logger.info("Set rain delay to {} hours", hours);
-                } else {
-                    logger.warn("Device ID not configured for rainDelay action");
-                }
-            } else {
-                logger.warn("Handler not available for rainDelay action");
-            }
-        } catch (RachioApiException e) {
-            logger.error("Failed to set rain delay: {}", e.getMessage(), e);
-        }
-        
-        return Map.of("success", success);
-    }
+    void rainDelay(String thingId, int hours, String deviceId);
 
     /**
-     * Stop all watering
+     * Run the next available zone (first non-running zone)
+     *
+     * @param thingId The OpenHAB thing ID
+     * @param duration Duration in seconds
+     * @param deviceId The Rachio device ID
      */
-    @RuleAction(label = "Stop Watering", description = "Stop all watering immediately")
-    @ActionOutput(name = "success", label = "Success", type = "java.lang.Boolean", description = "True if the command was successful")
-    public Map<String, Object> stopWatering() {
-        
-        logger.debug("Action: stopWatering called");
-        boolean success = false;
-        
-        try {
-            RachioBridgeHandler localHandler = handler;
-            if (localHandler != null && localHandler.getBridgeConfiguration() != null) {
-                String deviceId = localHandler.getBridgeConfiguration().deviceId;
-                
-                if (deviceId != null && !deviceId.isEmpty()) {
-                    localHandler.getHttpHandler().stopWatering(deviceId);
-                    success = true;
-                    logger.info("Stopped all watering");
-                } else {
-                    logger.warn("Device ID not configured for stopWatering action");
-                }
-            } else {
-                logger.warn("Handler not available for stopWatering action");
-            }
-        } catch (RachioApiException e) {
-            logger.error("Failed to stop watering: {}", e.getMessage(), e);
-        }
-        
-        return Map.of("success", success);
-    }
+    void runNextZone(String thingId, int duration, String deviceId);
 
     /**
      * Enable or disable a zone
+     *
+     * @param thingId The OpenHAB thing ID
+     * @param zoneId The Rachio zone ID
+     * @param enabled True to enable, false to disable
+     * @param deviceId The Rachio device ID
      */
-    @RuleAction(label = "Set Zone Enabled", description = "Enable or disable a zone")
-    @ActionOutput(name = "success", label = "Success", type = "java.lang.Boolean", description = "True if the command was successful")
-    public Map<String, Object> setZoneEnabled(
-            @ActionInput(name = "zoneId", label = "Zone ID", required = true, description = "The ID of the zone") String zoneId,
-            @ActionInput(name = "enabled", label = "Enabled", required = true, description = "True to enable, false to disable") boolean enabled) {
-        
-        logger.debug("Action: setZoneEnabled called with zoneId={}, enabled={}", zoneId, enabled);
-        boolean success = false;
-        
-        try {
-            RachioBridgeHandler localHandler = handler;
-            if (localHandler != null) {
-                localHandler.getHttpHandler().setZoneEnabled(zoneId, enabled);
-                success = true;
-                logger.info("Set zone {} enabled to {}", zoneId, enabled);
-            } else {
-                logger.warn("Handler not available for setZoneEnabled action");
-            }
-        } catch (RachioApiException e) {
-            logger.error("Failed to set zone enabled: {}", e.getMessage(), e);
-        }
-        
-        return Map.of("success", success);
-    }
+    void setZoneEnabled(String thingId, String zoneId, boolean enabled, String deviceId);
 
     /**
-     * Get zone information
+     * Get person (user) information
+     *
+     * @return Person information or null if not available
+     * @throws RachioApiException if API call fails
      */
-    @RuleAction(label = "Get Zone Info", description = "Get information about a zone")
-    @ActionOutput(name = "zoneName", label = "Zone Name", type = "java.lang.String", description = "Name of the zone")
-    @ActionOutput(name = "zoneEnabled", label = "Zone Enabled", type = "java.lang.Boolean", description = "Whether the zone is enabled")
-    @ActionOutput(name = "zoneRuntime", label = "Zone Runtime", type = "java.lang.Integer", description = "Runtime in seconds")
-    @ActionOutput(name = "success", label = "Success", type = "java.lang.Boolean", description = "True if the command was successful")
-    public Map<String, Object> getZoneInfo(
-            @ActionInput(name = "zoneId", label = "Zone ID", required = true, description = "The ID of the zone") String zoneId) {
-        
-        logger.debug("Action: getZoneInfo called with zoneId={}", zoneId);
-        
-        String zoneName = "";
-        boolean zoneEnabled = false;
-        int zoneRuntime = 0;
-        boolean success = false;
-        
-        try {
-            RachioBridgeHandler localHandler = handler;
-            if (localHandler != null && localHandler.getBridgeConfiguration() != null) {
-                String deviceId = localHandler.getBridgeConfiguration().deviceId;
-                
-                if (deviceId != null && !deviceId.isEmpty()) {
-                    // Get device data to find zone
-                    var device = localHandler.getHttpHandler().getDevice(deviceId);
-                    if (device != null && device.zones != null) {
-                        for (var zone : device.zones) {
-                            if (zone.id.equals(zoneId)) {
-                                zoneName = zone.name;
-                                zoneEnabled = zone.enabled;
-                                zoneRuntime = zone.runtime;
-                                success = true;
-                                logger.debug("Found zone: {}, enabled: {}, runtime: {}", zoneName, zoneEnabled, zoneRuntime);
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        } catch (RachioApiException e) {
-            logger.error("Failed to get zone info: {}", e.getMessage(), e);
-        }
-        
-        if (!success) {
-            logger.warn("Could not find zone with ID: {}", zoneId);
-        }
-        
-        return Map.of(
-            "zoneName", zoneName,
-            "zoneEnabled", zoneEnabled,
-            "zoneRuntime", zoneRuntime,
-            "success", success
-        );
-    }
+    @Nullable
+    RachioPerson getPerson() throws RachioApiException;
 
     /**
-     * Get device status
+     * Get device information
+     *
+     * @param deviceId The Rachio device ID
+     * @return Device information or null if not found
+     * @throws RachioApiException if API call fails
      */
-    @RuleAction(label = "Get Device Status", description = "Get the status of the Rachio device")
-    @ActionOutput(name = "deviceName", label = "Device Name", type = "java.lang.String", description = "Name of the device")
-    @ActionOutput(name = "deviceStatus", label = "Device Status", type = "java.lang.String", description = "Status (ONLINE/OFFLINE/SLEEP)")
-    @ActionOutput(name = "zoneCount", label = "Zone Count", type = "java.lang.Integer", description = "Number of zones")
-    @ActionOutput(name = "success", label = "Success", type = "java.lang.Boolean", description = "True if the command was successful")
-    public Map<String, Object> getDeviceStatus() {
-        
-        logger.debug("Action: getDeviceStatus called");
-        
-        String deviceName = "";
-        String deviceStatus = "UNKNOWN";
-        int zoneCount = 0;
-        boolean success = false;
-        
-        try {
-            RachioBridgeHandler localHandler = handler;
-            if (localHandler != null && localHandler.getBridgeConfiguration() != null) {
-                String deviceId = localHandler.getBridgeConfiguration().deviceId;
-                
-                if (deviceId != null && !deviceId.isEmpty()) {
-                    var device = localHandler.getHttpHandler().getDevice(deviceId);
-                    if (device != null) {
-                        deviceName = device.name;
-                        deviceStatus = device.status;
-                        zoneCount = (device.zones != null) ? device.zones.size() : 0;
-                        success = true;
-                        logger.debug("Device status: {}, zones: {}", deviceStatus, zoneCount);
-                    }
-                }
-            }
-        } catch (RachioApiException e) {
-            logger.error("Failed to get device status: {}", e.getMessage(), e);
-        }
-        
-        return Map.of(
-            "deviceName", deviceName,
-            "deviceStatus", deviceStatus,
-            "zoneCount", zoneCount,
-            "success", success
-        );
-    }
+    @Nullable
+    RachioDevice getDevice(String deviceId) throws RachioApiException;
 
     /**
-     * Check if device is online
+     * Get all devices for the current user
+     *
+     * @return List of devices
+     * @throws RachioApiException if API call fails
      */
-    @RuleAction(label = "Is Device Online", description = "Check if the Rachio device is online")
-    @ActionOutput(name = "online", label = "Online", type = "java.lang.Boolean", description = "True if the device is online")
-    @ActionOutput(name = "success", label = "Success", type = "java.lang.Boolean", description = "True if the command was successful")
-    public Map<String, Object> isDeviceOnline() {
-        
-        logger.debug("Action: isDeviceOnline called");
-        
-        boolean online = false;
-        boolean success = false;
-        
-        try {
-            RachioBridgeHandler localHandler = handler;
-            if (localHandler != null && localHandler.getBridgeConfiguration() != null) {
-                String deviceId = localHandler.getBridgeConfiguration().deviceId;
-                
-                if (deviceId != null && !deviceId.isEmpty()) {
-                    var device = localHandler.getHttpHandler().getDevice(deviceId);
-                    if (device != null) {
-                        online = "ONLINE".equals(device.status);
-                        success = true;
-                        logger.debug("Device online status: {}", online);
-                    }
-                }
-            }
-        } catch (RachioApiException e) {
-            logger.error("Failed to check device online status: {}", e.getMessage(), e);
-        }
-        
-        return Map.of(
-            "online", online,
-            "success", success
-        );
-    }
+    List<RachioDevice> getDevices() throws RachioApiException;
 
-    // Static methods for rule DSL compatibility
-    
-    public static Map<String, Object> startZone(@Nullable ThingActions actions, String zoneId, int duration) {
-        if (actions instanceof RachioActions) {
-            return ((RachioActions) actions).startZone(zoneId, duration);
-        }
-        logger.warn("Actions instance is not RachioActions");
-        return Map.of("success", false);
-    }
-    
-    public static Map<String, Object> runAllZones(@Nullable ThingActions actions, int duration) {
-        if (actions instanceof RachioActions) {
-            return ((RachioActions) actions).runAllZones(duration);
-        }
-        logger.warn("Actions instance is not RachioActions");
-        return Map.of("success", false);
-    }
-    
-    public static Map<String, Object> runNextZone(@Nullable ThingActions actions, int duration) {
-        if (actions instanceof RachioActions) {
-            return ((RachioActions) actions).runNextZone(duration);
-        }
-        logger.warn("Actions instance is not RachioActions");
-        return Map.of("success", false);
-    }
-    
-    public static Map<String, Object> rainDelay(@Nullable ThingActions actions, int hours) {
-        if (actions instanceof RachioActions) {
-            return ((RachioActions) actions).rainDelay(hours);
-        }
-        logger.warn("Actions instance is not RachioActions");
-        return Map.of("success", false);
-    }
-    
-    public static Map<String, Object> stopWatering(@Nullable ThingActions actions) {
-        if (actions instanceof RachioActions) {
-            return ((RachioActions) actions).stopWatering();
-        }
-        logger.warn("Actions instance is not RachioActions");
-        return Map.of("success", false);
-    }
-    
-    public static Map<String, Object> setZoneEnabled(@Nullable ThingActions actions, String zoneId, boolean enabled) {
-        if (actions instanceof RachioActions) {
-            return ((RachioActions) actions).setZoneEnabled(zoneId, enabled);
-        }
-        logger.warn("Actions instance is not RachioActions");
-        return Map.of("success", false);
-    }
-    
-    public static Map<String, Object> getZoneInfo(@Nullable ThingActions actions, String zoneId) {
-        if (actions instanceof RachioActions) {
-            return ((RachioActions) actions).getZoneInfo(zoneId);
-        }
-        logger.warn("Actions instance is not RachioActions");
-        return Map.of("zoneName", "", "zoneEnabled", false, "zoneRuntime", 0, "success", false);
-    }
-    
-    public static Map<String, Object> getDeviceStatus(@Nullable ThingActions actions) {
-        if (actions instanceof RachioActions) {
-            return ((RachioActions) actions).getDeviceStatus();
-        }
-        logger.warn("Actions instance is not RachioActions");
-        return Map.of("deviceName", "", "deviceStatus", "UNKNOWN", "zoneCount", 0, "success", false);
-    }
-    
-    public static Map<String, Object> isDeviceOnline(@Nullable ThingActions actions) {
-        if (actions instanceof RachioActions) {
-            return ((RachioActions) actions).isDeviceOnline();
-        }
-        logger.warn("Actions instance is not RachioActions");
-        return Map.of("online", false, "success", false);
-    }
+    /**
+     * Get events for a device
+     *
+     * @param deviceId The Rachio device ID
+     * @param count Number of events to retrieve
+     * @return List of event summaries
+     * @throws RachioApiException if API call fails
+     */
+    List<RachioEventSummary> getEvents(String deviceId, int count) throws RachioApiException;
+
+    /**
+     * Get weather forecast for a device
+     *
+     * @param deviceId The Rachio device ID
+     * @return Forecast information or null if not available
+     * @throws RachioApiException if API call fails
+     */
+    @Nullable
+    RachioForecast getForecast(String deviceId) throws RachioApiException;
+
+    /**
+     * Get water usage data for a device
+     *
+     * @param deviceId The Rachio device ID
+     * @param year The year to get usage for
+     * @return Usage information or null if not available
+     * @throws RachioApiException if API call fails
+     */
+    @Nullable
+    RachioUsage getUsage(String deviceId, int year) throws RachioApiException;
+
+    /**
+     * Get water savings data for a device
+     *
+     * @param deviceId The Rachio device ID
+     * @param year The year to get savings for
+     * @return Savings information or null if not available
+     * @throws RachioApiException if API call fails
+     */
+    @Nullable
+    RachioUsage getSavings(String deviceId, int year) throws RachioApiException;
+
+    /**
+     * Pause or unpause a device
+     *
+     * @param deviceId The Rachio device ID
+     * @param pause True to pause, false to unpause
+     * @throws RachioApiException if API call fails
+     */
+    void pauseDevice(String deviceId, boolean pause) throws RachioApiException;
+
+    /**
+     * Get alerts for a device
+     *
+     * @param deviceId The Rachio device ID
+     * @return List of alerts
+     * @throws RachioApiException if API call fails
+     */
+    List<RachioAlert> getAlerts(String deviceId) throws RachioApiException;
+
+    /**
+     * Get schedules for a device
+     *
+     * @param deviceId The Rachio device ID
+     * @return List of schedules
+     * @throws RachioApiException if API call fails
+     */
+    List<RachioSchedule> getSchedules(String deviceId) throws RachioApiException;
+
+    /**
+     * Get watering history for a zone
+     *
+     * @param zoneId The Rachio zone ID
+     * @param count Number of history entries to retrieve
+     * @return List of watering history entries
+     * @throws RachioApiException if API call fails
+     */
+    List<Map<String, Object>> getWateringHistory(String zoneId, int count) throws RachioApiException;
+
+    /**
+     * Process a webhook event
+     *
+     * @param event The webhook event
+     */
+    void processWebhookEvent(RachioWebhookEvent event);
+
+    /**
+     * Clear the device cache
+     */
+    void clearCache();
+
+    /**
+     * Get current cache size
+     *
+     * @return Number of cached devices
+     */
+    int getCacheSize();
+
+    /**
+     * Get rate limit information
+     *
+     * @return Map containing rate limit details
+     */
+    Map<String, Object> getRateLimitInfo();
+
+    /**
+     * Get adaptive polling multiplier
+     *
+     * @return Current polling multiplier (1, 2, or 3)
+     */
+    int getAdaptivePollingMultiplier();
+
+    /**
+     * Validate webhook signature
+     *
+     * @param payload The webhook payload
+     * @param signature The received signature
+     * @param secret The webhook secret
+     * @return True if signature is valid
+     */
+    boolean validateWebhookSignature(String payload, String signature, String secret);
 }
