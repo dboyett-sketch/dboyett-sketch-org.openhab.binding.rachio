@@ -1,58 +1,103 @@
 package org.openhab.binding.rachio.internal.api;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.binding.rachio.internal.api.dto.ZoneRunStatus;
+import org.eclipse.jdt.annotation.Nullable;
+import com.google.gson.annotations.SerializedName;
+import java.time.Instant;
 
 /**
- * Rachio Event class for webhook event processing
- *
- * @author Damion Boyett - Initial contribution
+ * DTO for Rachio Event from API
+ * Used for /device/{id}/event endpoint
+ * 
+ * @author Dave Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioEvent {
-    public String timestamp;
-    public String summary;
-    public String topic;
-    public String type;
-    public String subType;
-    public String zoneName;
-    public Integer zoneNumber;
-    public String zoneRunState;
-    public ZoneRunStatus zoneRunStatus;
-    public Integer duration;
+    @SerializedName("id")
+    public String id;
     
-    public RachioEvent() {
-        // Default constructor
+    @SerializedName("deviceId")
+    public String deviceId;
+    
+    @SerializedName("type")
+    public String type; // ZONE_STATUS, DEVICE_STATUS, SCHEDULE_STATUS, etc.
+    
+    @SerializedName("category")
+    public String category; // ZONE, DEVICE, SCHEDULE, WEATHER, etc.
+    
+    @SerializedName("timestamp")
+    public Instant timestamp;
+    
+    @SerializedName("summary")
+    public String summary;
+    
+    @SerializedName("icon")
+    public @Nullable String icon;
+    
+    @SerializedName("zoneId")
+    public @Nullable String zoneId;
+    
+    @SerializedName("zoneNumber")
+    public @Nullable Integer zoneNumber;
+    
+    @SerializedName("scheduleId")
+    public @Nullable String scheduleId;
+    
+    @SerializedName("duration")
+    public @Nullable Integer duration;
+    
+    @SerializedName("status")
+    public @Nullable String status;
+    
+    // Helper methods
+    
+    /**
+     * Check if this is a zone event
+     */
+    public boolean isZoneEvent() {
+        return "ZONE".equals(category);
     }
     
-    // Getters and setters
-    public String getTimestamp() { return timestamp; }
-    public void setTimestamp(String timestamp) { this.timestamp = timestamp; }
+    /**
+     * Check if this is a device event
+     */
+    public boolean isDeviceEvent() {
+        return "DEVICE".equals(category);
+    }
     
-    public String getSummary() { return summary; }
-    public void setSummary(String summary) { this.summary = summary; }
+    /**
+     * Check if this is a schedule event
+     */
+    public boolean isScheduleEvent() {
+        return "SCHEDULE".equals(category);
+    }
     
-    public String getTopic() { return topic; }
-    public void setTopic(String topic) { this.topic = topic; }
+    /**
+     * Get event summary
+     */
+    public String getEventSummary() {
+        return String.format("%s: %s at %s", type, summary, timestamp);
+    }
     
-    public String getType() { return type; }
-    public void setType(String type) { this.type = type; }
-    
-    public String getSubType() { return subType; }
-    public void setSubType(String subType) { this.subType = subType; }
-    
-    public String getZoneName() { return zoneName; }
-    public void setZoneName(String zoneName) { this.zoneName = zoneName; }
-    
-    public Integer getZoneNumber() { return zoneNumber; }
-    public void setZoneNumber(Integer zoneNumber) { this.zoneNumber = zoneNumber; }
-    
-    public String getZoneRunState() { return zoneRunState; }
-    public void setZoneRunState(String zoneRunState) { this.zoneRunState = zoneRunState; }
-    
-    public ZoneRunStatus getZoneRunStatus() { return zoneRunStatus; }
-    public void setZoneRunStatus(ZoneRunStatus zoneRunStatus) { this.zoneRunStatus = zoneRunStatus; }
-    
-    public Integer getDuration() { return duration; }
-    public void setDuration(Integer duration) { this.duration = duration; }
+    /**
+     * Get event details
+     */
+    public java.util.Map<String, Object> getDetails() {
+        java.util.Map<String, Object> details = new java.util.HashMap<>();
+        details.put("id", id);
+        details.put("deviceId", deviceId);
+        details.put("type", type);
+        details.put("category", category);
+        details.put("timestamp", timestamp.toString());
+        details.put("summary", summary);
+        
+        if (zoneId != null) details.put("zoneId", zoneId);
+        if (zoneNumber != null) details.put("zoneNumber", zoneNumber);
+        if (scheduleId != null) details.put("scheduleId", scheduleId);
+        if (duration != null) details.put("duration", duration);
+        if (status != null) details.put("status", status);
+        if (icon != null) details.put("icon", icon);
+        
+        return details;
+    }
 }
