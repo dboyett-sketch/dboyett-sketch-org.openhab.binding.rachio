@@ -1,8 +1,9 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.Year;
 import java.time.YearMonth;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Map;
 
@@ -12,776 +13,591 @@ import org.eclipse.jdt.annotation.Nullable;
 import com.google.gson.annotations.SerializedName;
 
 /**
- * DTO for Rachio water usage and savings data
+ * DTO representing Rachio water usage and savings data
  *
- * @author Dave Boyett - Initial contribution
+ * @author Damion Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioUsage {
-
-    // Basic usage data
-    @SerializedName("total")
-    public @Nullable Double total;
     
-    @SerializedName("savings")
-    public @Nullable Double savings;
-    
-    @SerializedName("baseline")
-    public @Nullable Double baseline;
-    
-    @SerializedName("actual")
-    public @Nullable Double actual;
-    
-    @SerializedName("percentage")
-    public @Nullable Double percentage;
-    
-    @SerializedName("units")
-    public @Nullable String units;
-    
-    @SerializedName("period")
-    public @Nullable String period;
-    
-    @SerializedName("startDate")
-    public @Nullable LocalDate startDate;
-    
-    @SerializedName("endDate")
-    public @Nullable LocalDate endDate;
+    // Device identification
+    @SerializedName("deviceId")
+    private String deviceId = "";
     
     @SerializedName("generatedAt")
-    public @Nullable java.time.Instant generatedAt;
+    private Instant generatedAt;
     
-    // Detailed breakdown
-    @SerializedName("byMonth")
-    public @Nullable List<MonthlyUsage> byMonth;
+    // Period information
+    @SerializedName("periodStart")
+    private Instant periodStart;
     
-    @SerializedName("byZone")
-    public @Nullable List<ZoneUsage> byZone;
+    @SerializedName("periodEnd")
+    private Instant periodEnd;
     
-    @SerializedName("bySchedule")
-    public @Nullable List<ScheduleUsage> bySchedule;
+    @SerializedName("periodType")
+    private String periodType = ""; // "DAY", "WEEK", "MONTH", "YEAR", "CUSTOM"
     
-    @SerializedName("byDay")
-    public @Nullable List<DailyUsage> byDay;
+    // Total usage and savings (was causing compilation errors)
+    @SerializedName("totalUsage")
+    private Double totalUsage; // in cubic meters
     
-    @SerializedName("byHour")
-    public @Nullable List<HourlyUsage> byHour;
+    @SerializedName("totalSavings")
+    private Double totalSavings; // in cubic meters
     
-    @SerializedName("weatherCorrection")
-    public @Nullable Double weatherCorrection;
+    // Additional metrics
+    @SerializedName("baselineUsage")
+    private Double baselineUsage; // in cubic meters
     
-    @SerializedName("efficiencyImprovement")
-    public @Nullable Double efficiencyImprovement;
+    @SerializedName("percentSavings")
+    private Double percentSavings; // percentage
     
-    @SerializedName("scheduleOptimization")
-    public @Nullable Double scheduleOptimization;
-    
-    // Environmental impact
-    @SerializedName("co2Savings")
-    public @Nullable Double co2Savings;
-    
-    @SerializedName("energySavings")
-    public @Nullable Double energySavings;
+    @SerializedName("carbonSavings")
+    private Double carbonSavings; // in kg CO2
     
     @SerializedName("moneySavings")
-    public @Nullable Double moneySavings;
+    private Double moneySavings; // in USD
     
+    @SerializedName("energySavings")
+    private Double energySavings; // in kWh
+    
+    // Environmental impact
+    @SerializedName("treesSaved")
+    private Double treesSaved; // number of trees
+    
+    @SerializedName("carMilesSaved")
+    private Double carMilesSaved; // miles
+    
+    @SerializedName("showersSaved")
+    private Double showersSaved; // number of showers
+    
+    @SerializedName("laundryLoadsSaved")
+    private Double laundryLoadsSaved; // number of loads
+    
+    // Zone breakdown
+    @SerializedName("zoneUsage")
+    private List<ZoneUsage> zoneUsage = List.of();
+    
+    // Monthly breakdown
+    @SerializedName("monthlyBreakdown")
+    private List<MonthlyUsage> monthlyBreakdown = List.of();
+    
+    // Daily breakdown
+    @SerializedName("dailyBreakdown")
+    private List<DailyUsage> dailyBreakdown = List.of();
+    
+    // Weather impact
+    @SerializedName("rainfall")
+    private Double rainfall; // in inches or mm
+    
+    @SerializedName("evapotranspiration")
+    private Double evapotranspiration; // in inches or mm
+    
+    @SerializedName("temperature")
+    private Double temperature; // average temperature
+    
+    @SerializedName("weatherAdjustedSavings")
+    private Double weatherAdjustedSavings; // in cubic meters
+    
+    // Units
+    @SerializedName("units")
+    private String units = "METRIC"; // "METRIC" or "US"
+    
+    // Currency
     @SerializedName("currency")
-    public @Nullable String currency;
+    private String currency = "USD";
     
-    @SerializedName("waterSource")
-    public @Nullable String waterSource;
+    // Additional properties
+    @SerializedName("properties")
+    private Map<String, Object> properties = Map.of();
     
-    @SerializedName("waterCost")
-    public @Nullable Double waterCost;
+    // Getters and setters
+    public String getDeviceId() {
+        return deviceId;
+    }
     
-    @SerializedName("waterCostUnit")
-    public @Nullable String waterCostUnit;
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
+    }
     
-    // Statistics
-    @SerializedName("averageDailyUsage")
-    public @Nullable Double averageDailyUsage;
+    public @Nullable Instant getGeneratedAt() {
+        return generatedAt;
+    }
     
-    @SerializedName("peakDailyUsage")
-    public @Nullable Double peakDailyUsage;
+    public void setGeneratedAt(Instant generatedAt) {
+        this.generatedAt = generatedAt;
+    }
     
-    @SerializedName("peakUsageDate")
-    public @Nullable LocalDate peakUsageDate;
+    public @Nullable Instant getPeriodStart() {
+        return periodStart;
+    }
     
-    @SerializedName("daysWatered")
-    public @Nullable Integer daysWatered;
+    public void setPeriodStart(Instant periodStart) {
+        this.periodStart = periodStart;
+    }
     
-    @SerializedName("totalWateringEvents")
-    public @Nullable Integer totalWateringEvents;
+    public @Nullable Instant getPeriodEnd() {
+        return periodEnd;
+    }
     
-    @SerializedName("averageWateringDuration")
-    public @Nullable Double averageWateringDuration;
+    public void setPeriodEnd(Instant periodEnd) {
+        this.periodEnd = periodEnd;
+    }
     
-    @SerializedName("totalWateringDuration")
-    public @Nullable Double totalWateringDuration;
+    public String getPeriodType() {
+        return periodType;
+    }
     
-    // Metadata
-    @SerializedName("deviceId")
-    public @Nullable String deviceId;
+    public void setPeriodType(String periodType) {
+        this.periodType = periodType;
+    }
     
-    @SerializedName("deviceName")
-    public @Nullable String deviceName;
+    // FIXED: Removed @Nullable from method parameter (was causing compilation error)
+    public @Nullable Double getTotalUsage() {
+        return totalUsage;
+    }
     
-    @SerializedName("location")
-    public @Nullable String location;
+    public void setTotalUsage(Double totalUsage) {
+        this.totalUsage = totalUsage;
+    }
     
-    @SerializedName("climateZone")
-    public @Nullable String climateZone;
+    // FIXED: Removed @Nullable from method parameter (was causing compilation error)
+    public @Nullable Double getTotalSavings() {
+        return totalSavings;
+    }
     
-    @SerializedName("referenceYear")
-    public @Nullable Year referenceYear;
+    public void setTotalSavings(Double totalSavings) {
+        this.totalSavings = totalSavings;
+    }
     
-    @SerializedName("comparisonMethod")
-    public @Nullable String comparisonMethod;
+    public @Nullable Double getBaselineUsage() {
+        return baselineUsage;
+    }
     
-    @SerializedName("confidence")
-    public @Nullable Double confidence;
+    public void setBaselineUsage(Double baselineUsage) {
+        this.baselineUsage = baselineUsage;
+    }
     
-    @SerializedName("notes")
-    public @Nullable String notes;
+    public @Nullable Double getPercentSavings() {
+        return percentSavings;
+    }
+    
+    public void setPercentSavings(Double percentSavings) {
+        this.percentSavings = percentSavings;
+    }
+    
+    public @Nullable Double getCarbonSavings() {
+        return carbonSavings;
+    }
+    
+    public void setCarbonSavings(Double carbonSavings) {
+        this.carbonSavings = carbonSavings;
+    }
+    
+    public @Nullable Double getMoneySavings() {
+        return moneySavings;
+    }
+    
+    public void setMoneySavings(Double moneySavings) {
+        this.moneySavings = moneySavings;
+    }
+    
+    public @Nullable Double getEnergySavings() {
+        return energySavings;
+    }
+    
+    public void setEnergySavings(Double energySavings) {
+        this.energySavings = energySavings;
+    }
+    
+    public @Nullable Double getTreesSaved() {
+        return treesSaved;
+    }
+    
+    public void setTreesSaved(Double treesSaved) {
+        this.treesSaved = treesSaved;
+    }
+    
+    public @Nullable Double getCarMilesSaved() {
+        return carMilesSaved;
+    }
+    
+    public void setCarMilesSaved(Double carMilesSaved) {
+        this.carMilesSaved = carMilesSaved;
+    }
+    
+    public @Nullable Double getShowersSaved() {
+        return showersSaved;
+    }
+    
+    public void setShowersSaved(Double showersSaved) {
+        this.showersSaved = showersSaved;
+    }
+    
+    public @Nullable Double getLaundryLoadsSaved() {
+        return laundryLoadsSaved;
+    }
+    
+    public void setLaundryLoadsSaved(Double laundryLoadsSaved) {
+        this.laundryLoadsSaved = laundryLoadsSaved;
+    }
+    
+    public List<ZoneUsage> getZoneUsage() {
+        return zoneUsage;
+    }
+    
+    public void setZoneUsage(List<ZoneUsage> zoneUsage) {
+        this.zoneUsage = zoneUsage;
+    }
+    
+    public List<MonthlyUsage> getMonthlyBreakdown() {
+        return monthlyBreakdown;
+    }
+    
+    public void setMonthlyBreakdown(List<MonthlyUsage> monthlyBreakdown) {
+        this.monthlyBreakdown = monthlyBreakdown;
+    }
+    
+    public List<DailyUsage> getDailyBreakdown() {
+        return dailyBreakdown;
+    }
+    
+    public void setDailyBreakdown(List<DailyUsage> dailyBreakdown) {
+        this.dailyBreakdown = dailyBreakdown;
+    }
+    
+    public @Nullable Double getRainfall() {
+        return rainfall;
+    }
+    
+    public void setRainfall(Double rainfall) {
+        this.rainfall = rainfall;
+    }
+    
+    public @Nullable Double getEvapotranspiration() {
+        return evapotranspiration;
+    }
+    
+    public void setEvapotranspiration(Double evapotranspiration) {
+        this.evapotranspiration = evapotranspiration;
+    }
+    
+    public @Nullable Double getTemperature() {
+        return temperature;
+    }
+    
+    public void setTemperature(Double temperature) {
+        this.temperature = temperature;
+    }
+    
+    public @Nullable Double getWeatherAdjustedSavings() {
+        return weatherAdjustedSavings;
+    }
+    
+    public void setWeatherAdjustedSavings(Double weatherAdjustedSavings) {
+        this.weatherAdjustedSavings = weatherAdjustedSavings;
+    }
+    
+    public String getUnits() {
+        return units;
+    }
+    
+    public void setUnits(String units) {
+        this.units = units;
+    }
+    
+    public String getCurrency() {
+        return currency;
+    }
+    
+    public void setCurrency(String currency) {
+        this.currency = currency;
+    }
+    
+    public Map<String, Object> getProperties() {
+        return properties;
+    }
+    
+    public void setProperties(Map<String, Object> properties) {
+        this.properties = properties;
+    }
+    
+    // Helper methods
+    public boolean isMetric() {
+        return "METRIC".equalsIgnoreCase(units);
+    }
+    
+    public String getVolumeUnit() {
+        return isMetric() ? "m³" : "gal";
+    }
+    
+    public String getLengthUnit() {
+        return isMetric() ? "mm" : "in";
+    }
+    
+    public String getTemperatureUnit() {
+        return isMetric() ? "°C" : "°F";
+    }
+    
+    public double getTotalUsageInGallons() {
+        if (totalUsage == null) return 0.0;
+        return isMetric() ? totalUsage * 264.172 : totalUsage; // m³ to gallons
+    }
+    
+    public double getTotalSavingsInGallons() {
+        if (totalSavings == null) return 0.0;
+        return isMetric() ? totalSavings * 264.172 : totalSavings; // m³ to gallons
+    }
+    
+    public double getRainfallInInches() {
+        if (rainfall == null) return 0.0;
+        return isMetric() ? rainfall / 25.4 : rainfall; // mm to inches
+    }
+    
+    public double getEvapotranspirationInInches() {
+        if (evapotranspiration == null) return 0.0;
+        return isMetric() ? evapotranspiration / 25.4 : evapotranspiration; // mm to inches
+    }
+    
+    public double getTemperatureInFahrenheit() {
+        if (temperature == null) return 0.0;
+        return isMetric() ? (temperature * 9.0 / 5.0) + 32.0 : temperature;
+    }
+    
+    public @Nullable ZoneUsage getZoneUsageById(String zoneId) {
+        for (ZoneUsage zone : zoneUsage) {
+            if (zone.getZoneId().equals(zoneId)) {
+                return zone;
+            }
+        }
+        return null;
+    }
+    
+    public double getTotalZoneRuntime() {
+        double total = 0.0;
+        for (ZoneUsage zone : zoneUsage) {
+            total += zone.getRuntime();
+        }
+        return total;
+    }
+    
+    public int getTotalWateringEvents() {
+        int total = 0;
+        for (ZoneUsage zone : zoneUsage) {
+            total += zone.getWateringEvents();
+        }
+        return total;
+    }
+    
+    public boolean hasSavings() {
+        return totalSavings != null && totalSavings > 0.0;
+    }
+    
+    public String getFormattedPeriod() {
+        if (periodStart == null || periodEnd == null) {
+            return "Unknown Period";
+        }
+        
+        switch (periodType.toUpperCase()) {
+            case "DAY":
+                return DateTimeFormatter.ofPattern("MMMM d, yyyy").format(periodStart.atZone(java.time.ZoneId.systemDefault()));
+            case "WEEK":
+                return String.format("Week of %s", 
+                    DateTimeFormatter.ofPattern("MMMM d").format(periodStart.atZone(java.time.ZoneId.systemDefault())));
+            case "MONTH":
+                return DateTimeFormatter.ofPattern("MMMM yyyy").format(periodStart.atZone(java.time.ZoneId.systemDefault()));
+            case "YEAR":
+                return DateTimeFormatter.ofPattern("yyyy").format(periodStart.atZone(java.time.ZoneId.systemDefault()));
+            default:
+                return String.format("%s to %s", 
+                    DateTimeFormatter.ofPattern("MMM d").format(periodStart.atZone(java.time.ZoneId.systemDefault())),
+                    DateTimeFormatter.ofPattern("MMM d, yyyy").format(periodEnd.atZone(java.time.ZoneId.systemDefault())));
+        }
+    }
+    
+    @Override
+    public String toString() {
+        return String.format("RachioUsage[deviceId=%s, period=%s, usage=%.2f%s, savings=%.2f%s]", 
+            deviceId, getFormattedPeriod(), totalUsage, getVolumeUnit(), totalSavings, getVolumeUnit());
+    }
+    
+    /**
+     * Zone-specific usage data
+     */
+    public static class ZoneUsage {
+        @SerializedName("zoneId")
+        private String zoneId = "";
+        
+        @SerializedName("zoneName")
+        private String zoneName = "";
+        
+        @SerializedName("zoneNumber")
+        private int zoneNumber = 0;
+        
+        @SerializedName("usage")
+        private Double usage; // in cubic meters
+        
+        @SerializedName("savings")
+        private Double savings; // in cubic meters
+        
+        @SerializedName("baselineUsage")
+        private Double baselineUsage; // in cubic meters
+        
+        @SerializedName("percentSavings")
+        private Double percentSavings; // percentage
+        
+        @SerializedName("runtime")
+        private Double runtime; // in seconds
+        
+        @SerializedName("wateringEvents")
+        private Integer wateringEvents = 0;
+        
+        @SerializedName("averageRuntime")
+        private Double averageRuntime; // in seconds
+        
+        @SerializedName("lastWatered")
+        private Instant lastWatered;
+        
+        public String getZoneId() { return zoneId; }
+        public void setZoneId(String zoneId) { this.zoneId = zoneId; }
+        
+        public String getZoneName() { return zoneName; }
+        public void setZoneName(String zoneName) { this.zoneName = zoneName; }
+        
+        public int getZoneNumber() { return zoneNumber; }
+        public void setZoneNumber(int zoneNumber) { this.zoneNumber = zoneNumber; }
+        
+        public @Nullable Double getUsage() { return usage; }
+        public void setUsage(Double usage) { this.usage = usage; }
+        
+        public @Nullable Double getSavings() { return savings; }
+        public void setSavings(Double savings) { this.savings = savings; }
+        
+        public @Nullable Double getBaselineUsage() { return baselineUsage; }
+        public void setBaselineUsage(Double baselineUsage) { this.baselineUsage = baselineUsage; }
+        
+        public @Nullable Double getPercentSavings() { return percentSavings; }
+        public void setPercentSavings(Double percentSavings) { this.percentSavings = percentSavings; }
+        
+        public double getRuntime() { return runtime != null ? runtime : 0.0; }
+        public void setRuntime(Double runtime) { this.runtime = runtime; }
+        
+        public int getWateringEvents() { return wateringEvents != null ? wateringEvents : 0; }
+        public void setWateringEvents(Integer wateringEvents) { this.wateringEvents = wateringEvents; }
+        
+        public @Nullable Double getAverageRuntime() { return averageRuntime; }
+        public void setAverageRuntime(Double averageRuntime) { this.averageRuntime = averageRuntime; }
+        
+        public @Nullable Instant getLastWatered() { return lastWatered; }
+        public void setLastWatered(Instant lastWatered) { this.lastWatered = lastWatered; }
+        
+        @Override
+        public String toString() {
+            return String.format("ZoneUsage[zone=%s, usage=%.2f, savings=%.2f]", 
+                zoneName, usage, savings);
+        }
+    }
     
     /**
      * Monthly usage breakdown
      */
-    @NonNullByDefault
     public static class MonthlyUsage {
         @SerializedName("month")
-        public @Nullable YearMonth month;
+        private YearMonth month;
         
-        @SerializedName("total")
-        public @Nullable Double total;
-        
-        @SerializedName("savings")
-        public @Nullable Double savings;
-        
-        @SerializedName("baseline")
-        public @Nullable Double baseline;
-        
-        @SerializedName("actual")
-        public @Nullable Double actual;
-        
-        @SerializedName("percentage")
-        public @Nullable Double percentage;
-        
-        @SerializedName("daysWatered")
-        public @Nullable Integer daysWatered;
-        
-        @SerializedName("wateringEvents")
-        public @Nullable Integer wateringEvents;
-        
-        @SerializedName("averageTemperature")
-        public @Nullable Double averageTemperature;
-        
-        @SerializedName("totalPrecipitation")
-        public @Nullable Double totalPrecipitation;
-        
-        @SerializedName("totalEvapotranspiration")
-        public @Nullable Double totalEvapotranspiration;
-        
-        @SerializedName("weatherCorrection")
-        public @Nullable Double weatherCorrection;
-        
-        @SerializedName("efficiency")
-        public @Nullable Double efficiency;
-    }
-    
-    /**
-     * Zone usage breakdown
-     */
-    @NonNullByDefault
-    public static class ZoneUsage {
-        @SerializedName("zoneId")
-        public @Nullable String zoneId;
-        
-        @SerializedName("zoneName")
-        public @Nullable String zoneName;
-        
-        @SerializedName("zoneNumber")
-        public @Nullable Integer zoneNumber;
-        
-        @SerializedName("total")
-        public @Nullable Double total;
-        
-        @SerializedName("percentage")
-        public @Nullable Double percentage;
+        @SerializedName("usage")
+        private Double usage; // in cubic meters
         
         @SerializedName("savings")
-        public @Nullable Double savings;
+        private Double savings; // in cubic meters
         
-        @SerializedName("baseline")
-        public @Nullable Double baseline;
-        
-        @SerializedName("actual")
-        public @Nullable Double actual;
+        @SerializedName("rainfall")
+        private Double rainfall; // in inches or mm
         
         @SerializedName("wateringEvents")
-        public @Nullable Integer wateringEvents;
+        private Integer wateringEvents = 0;
         
-        @SerializedName("totalDuration")
-        public @Nullable Double totalDuration;
+        public @Nullable YearMonth getMonth() { return month; }
+        public void setMonth(YearMonth month) { this.month = month; }
         
-        @SerializedName("averageDuration")
-        public @Nullable Double averageDuration;
+        public @Nullable Double getUsage() { return usage; }
+        public void setUsage(Double usage) { this.usage = usage; }
         
-        @SerializedName("area")
-        public @Nullable Double area;
+        public @Nullable Double getSavings() { return savings; }
+        public void setSavings(Double savings) { this.savings = savings; }
         
-        @SerializedName("cropType")
-        public @Nullable String cropType;
+        public @Nullable Double getRainfall() { return rainfall; }
+        public void setRainfall(Double rainfall) { this.rainfall = rainfall; }
         
-        @SerializedName("soilType")
-        public @Nullable String soilType;
+        public int getWateringEvents() { return wateringEvents != null ? wateringEvents : 0; }
+        public void setWateringEvents(Integer wateringEvents) { this.wateringEvents = wateringEvents; }
         
-        @SerializedName("efficiency")
-        public @Nullable Double efficiency;
+        public String getMonthName() {
+            if (month == null) return "";
+            return month.format(DateTimeFormatter.ofPattern("MMM yyyy"));
+        }
         
-        @SerializedName("nozzleRate")
-        public @Nullable Double nozzleRate;
-        
-        @SerializedName("recommendedRuntime")
-        public @Nullable Double recommendedRuntime;
-        
-        @SerializedName("actualRuntime")
-        public @Nullable Double actualRuntime;
-    }
-    
-    /**
-     * Schedule usage breakdown
-     */
-    @NonNullByDefault
-    public static class ScheduleUsage {
-        @SerializedName("scheduleId")
-        public @Nullable String scheduleId;
-        
-        @SerializedName("scheduleName")
-        public @Nullable String scheduleName;
-        
-        @SerializedName("scheduleType")
-        public @Nullable String scheduleType;
-        
-        @SerializedName("total")
-        public @Nullable Double total;
-        
-        @SerializedName("percentage")
-        public @Nullable Double percentage;
-        
-        @SerializedName("savings")
-        public @Nullable Double savings;
-        
-        @SerializedName("baseline")
-        public @Nullable Double baseline;
-        
-        @SerializedName("actual")
-        public @Nullable Double actual;
-        
-        @SerializedName("wateringEvents")
-        public @Nullable Integer wateringEvents;
-        
-        @SerializedName("totalDuration")
-        public @Nullable Double totalDuration;
-        
-        @SerializedName("averageDuration")
-        public @Nullable Double averageDuration;
-        
-        @SerializedName("zones")
-        public @Nullable Integer zones;
-        
-        @SerializedName("flexSchedule")
-        public @Nullable Boolean flexSchedule;
-        
-        @SerializedName("smartCycle")
-        public @Nullable Boolean smartCycle;
-        
-        @SerializedName("cycleSoak")
-        public @Nullable Boolean cycleSoak;
-        
-        @SerializedName("efficiency")
-        public @Nullable Double efficiency;
-        
-        @SerializedName("skipRate")
-        public @Nullable Double skipRate;
-        
-        @SerializedName("weatherSkipRate")
-        public @Nullable Double weatherSkipRate;
-        
-        @SerializedName("manualSkipRate")
-        public @Nullable Double manualSkipRate;
+        @Override
+        public String toString() {
+            return String.format("MonthlyUsage[month=%s, usage=%.2f, savings=%.2f]", 
+                getMonthName(), usage, savings);
+        }
     }
     
     /**
      * Daily usage breakdown
      */
-    @NonNullByDefault
     public static class DailyUsage {
         @SerializedName("date")
-        public @Nullable LocalDate date;
+        private LocalDate date;
         
-        @SerializedName("dayOfWeek")
-        public @Nullable String dayOfWeek;
-        
-        @SerializedName("total")
-        public @Nullable Double total;
+        @SerializedName("usage")
+        private Double usage; // in cubic meters
         
         @SerializedName("savings")
-        public @Nullable Double savings;
+        private Double savings; // in cubic meters
         
-        @SerializedName("baseline")
-        public @Nullable Double baseline;
-        
-        @SerializedName("actual")
-        public @Nullable Double actual;
-        
-        @SerializedName("wateringEvents")
-        public @Nullable Integer wateringEvents;
-        
-        @SerializedName("totalDuration")
-        public @Nullable Double totalDuration;
+        @SerializedName("rainfall")
+        private Double rainfall; // in inches or mm
         
         @SerializedName("temperature")
-        public @Nullable Double temperature;
-        
-        @SerializedName("precipitation")
-        public @Nullable Double precipitation;
-        
-        @SerializedName("evapotranspiration")
-        public @Nullable Double evapotranspiration;
-        
-        @SerializedName("skipWatering")
-        public @Nullable Boolean skipWatering;
-        
-        @SerializedName("skipReason")
-        public @Nullable String skipReason;
-        
-        @SerializedName("rainDelay")
-        public @Nullable Boolean rainDelay;
-        
-        @SerializedName("rainDelayHours")
-        public @Nullable Integer rainDelayHours;
-    }
-    
-    /**
-     * Hourly usage breakdown
-     */
-    @NonNullByDefault
-    public static class HourlyUsage {
-        @SerializedName("hour")
-        public @Nullable Integer hour;
-        
-        @SerializedName("total")
-        public @Nullable Double total;
-        
-        @SerializedName("percentage")
-        public @Nullable Double percentage;
+        private Double temperature; // average temperature
         
         @SerializedName("wateringEvents")
-        public @Nullable Integer wateringEvents;
+        private Integer wateringEvents = 0;
         
-        @SerializedName("averageDuration")
-        public @Nullable Double averageDuration;
+        @SerializedName("runtime")
+        private Double runtime; // in seconds
         
-        @SerializedName("temperature")
-        public @Nullable Double temperature;
+        public @Nullable LocalDate getDate() { return date; }
+        public void setDate(LocalDate date) { this.date = date; }
         
-        @SerializedName("humidity")
-        public @Nullable Double humidity;
+        public @Nullable Double getUsage() { return usage; }
+        public void setUsage(Double usage) { this.usage = usage; }
         
-        @SerializedName("windSpeed")
-        public @Nullable Double windSpeed;
+        public @Nullable Double getSavings() { return savings; }
+        public void setSavings(Double savings) { this.savings = savings; }
         
-        @SerializedName("efficiency")
-        public @Nullable Double efficiency;
-    }
-    
-    // Utility methods
-    
-    /**
-     * Get total water usage
-     */
-    public @Nullable Double getTotalUsage() {
-        return total;
-    }
-    
-    /**
-     * Get total water savings
-     */
-    public @Nullable Double getTotalSavings() {
-        return savings;
-    }
-    
-    /**
-     * Get savings percentage
-     */
-    public @Nullable Double getSavingsPercentage() {
-        return percentage;
-    }
-    
-    /**
-     * Get baseline usage
-     */
-    public @Nullable Double getBaselineUsage() {
-        return baseline;
-    }
-    
-    /**
-     * Get actual usage
-     */
-    public @Nullable Double getActualUsage() {
-        return actual;
-    }
-    
-    /**
-     * Get CO2 savings
-     */
-    public @Nullable Double getCo2Savings() {
-        return co2Savings;
-    }
-    
-    /**
-     * Get energy savings
-     */
-    public @Nullable Double getEnergySavings() {
-        return energySavings;
-    }
-    
-    /**
-     * Get money savings
-     */
-    public @Nullable Double getMoneySavings() {
-        return moneySavings;
-    }
-    
-    /**
-     * Get water cost
-     */
-    public @Nullable Double getWaterCost() {
-        return waterCost;
-    }
-    
-    /**
-     * Get average daily usage
-     */
-    public @Nullable Double getAverageDailyUsage() {
-        return averageDailyUsage;
-    }
-    
-    /**
-     * Get peak daily usage
-     */
-    public @Nullable Double getPeakDailyUsage() {
-        return peakDailyUsage;
-    }
-    
-    /**
-     * Get peak usage date
-     */
-    public @Nullable LocalDate getPeakUsageDate() {
-        return peakUsageDate;
-    }
-    
-    /**
-     * Get number of days watered
-     */
-    public @Nullable Integer getDaysWatered() {
-        return daysWatered;
-    }
-    
-    /**
-     * Get total watering events
-     */
-    public @Nullable Integer getTotalWateringEvents() {
-        return totalWateringEvents;
-    }
-    
-    /**
-     * Get average watering duration
-     */
-    public @Nullable Double getAverageWateringDuration() {
-        return averageWateringDuration;
-    }
-    
-    /**
-     * Get total watering duration
-     */
-    public @Nullable Double getTotalWateringDuration() {
-        return totalWateringDuration;
-    }
-    
-    /**
-     * Get monthly usage data
-     */
-    public @Nullable List<MonthlyUsage> getMonthlyUsage() {
-        return byMonth;
-    }
-    
-    /**
-     * Get zone usage data
-     */
-    public @Nullable List<ZoneUsage> getZoneUsage() {
-        return byZone;
-    }
-    
-    /**
-     * Get schedule usage data
-     */
-    public @Nullable List<ScheduleUsage> getScheduleUsage() {
-        return bySchedule;
-    }
-    
-    /**
-     * Get daily usage data
-     */
-    public @Nullable List<DailyUsage> getDailyUsage() {
-        return byDay;
-    }
-    
-    /**
-     * Get hourly usage data
-     */
-    public @Nullable List<HourlyUsage> getHourlyUsage() {
-        return byHour;
-    }
-    
-    /**
-     * Get device ID
-     */
-    public @Nullable String getDeviceId() {
-        return deviceId;
-    }
-    
-    /**
-     * Get device name
-     */
-    public @Nullable String getDeviceName() {
-        return deviceName;
-    }
-    
-    /**
-     * Get location
-     */
-    public @Nullable String getLocation() {
-        return location;
-    }
-    
-    /**
-     * Get climate zone
-     */
-    public @Nullable String getClimateZone() {
-        return climateZone;
-    }
-    
-    /**
-     * Get reference year
-     */
-    public @Nullable Year getReferenceYear() {
-        return referenceYear;
-    }
-    
-    /**
-     * Get usage period
-     */
-    public @Nullable String getPeriod() {
-        return period;
-    }
-    
-    /**
-     * Get start date
-     */
-    public @Nullable LocalDate getStartDate() {
-        return startDate;
-    }
-    
-    /**
-     * Get end date
-     */
-    public @Nullable LocalDate getEndDate() {
-        return endDate;
-    }
-    
-    /**
-     * Get generated timestamp
-     */
-    public @Nullable java.time.Instant getGeneratedAt() {
-        return generatedAt;
-    }
-    
-    /**
-     * Get weather correction factor
-     */
-    public @Nullable Double getWeatherCorrection() {
-        return weatherCorrection;
-    }
-    
-    /**
-     * Get efficiency improvement
-     */
-    public @Nullable Double getEfficiencyImprovement() {
-        return efficiencyImprovement;
-    }
-    
-    /**
-     * Get schedule optimization
-     */
-    public @Nullable Double getScheduleOptimization() {
-        return scheduleOptimization;
-    }
-    
-    /**
-     * Check if usage data is available
-     */
-    public boolean hasUsageData() {
-        return total != null || savings != null || (byMonth != null && !byMonth.isEmpty());
-    }
-    
-    /**
-     * Get formatted summary
-     */
-    public String getFormattedSummary() {
-        StringBuilder sb = new StringBuilder();
+        public @Nullable Double getRainfall() { return rainfall; }
+        public void setRainfall(Double rainfall) { this.rainfall = rainfall; }
         
-        if (deviceName != null) {
-            sb.append(deviceName).append(": ");
+        public @Nullable Double getTemperature() { return temperature; }
+        public void setTemperature(Double temperature) { this.temperature = temperature; }
+        
+        public int getWateringEvents() { return wateringEvents != null ? wateringEvents : 0; }
+        public void setWateringEvents(Integer wateringEvents) { this.wateringEvents = wateringEvents; }
+        
+        public double getRuntime() { return runtime != null ? runtime : 0.0; }
+        public void setRuntime(Double runtime) { this.runtime = runtime; }
+        
+        public String getFormattedDate() {
+            if (date == null) return "";
+            return date.format(DateTimeFormatter.ofPattern("MMM d"));
         }
         
-        if (total != null && savings != null && percentage != null) {
-            sb.append(String.format("Usage: %.1f %s, Savings: %.1f %s (%.0f%%)",
-                    total, units != null ? units : "units",
-                    savings, units != null ? units : "units",
-                    percentage));
-        } else if (total != null) {
-            sb.append(String.format("Usage: %.1f %s",
-                    total, units != null ? units : "units"));
+        @Override
+        public String toString() {
+            return String.format("DailyUsage[date=%s, usage=%.2f, rainfall=%.2f]", 
+                getFormattedDate(), usage, rainfall);
         }
-        
-        if (period != null) {
-            sb.append(" for ").append(period);
-        }
-        
-        if (startDate != null && endDate != null) {
-            sb.append(" (").append(startDate).append(" to ").append(endDate).append(")");
-        }
-        
-        if (moneySavings != null && currency != null) {
-            sb.append(String.format(", Saved: %.2f %s", moneySavings, currency));
-        }
-        
-        return sb.toString();
-    }
-    
-    /**
-     * Get detailed breakdown as map
-     */
-    public @Nullable Map<String, Object> getDetailedBreakdown() {
-        if (!hasUsageData()) {
-            return null;
-        }
-        
-        java.util.HashMap<String, Object> breakdown = new java.util.HashMap<>();
-        
-        if (total != null) breakdown.put("total", total);
-        if (savings != null) breakdown.put("savings", savings);
-        if (percentage != null) breakdown.put("percentage", percentage);
-        if (baseline != null) breakdown.put("baseline", baseline);
-        if (actual != null) breakdown.put("actual", actual);
-        
-        if (averageDailyUsage != null) breakdown.put("averageDailyUsage", averageDailyUsage);
-        if (peakDailyUsage != null) breakdown.put("peakDailyUsage", peakDailyUsage);
-        if (peakUsageDate != null) breakdown.put("peakUsageDate", peakUsageDate.toString());
-        
-        if (daysWatered != null) breakdown.put("daysWatered", daysWatered);
-        if (totalWateringEvents != null) breakdown.put("totalWateringEvents", totalWateringEvents);
-        if (averageWateringDuration != null) breakdown.put("averageWateringDuration", averageWateringDuration);
-        if (totalWateringDuration != null) breakdown.put("totalWateringDuration", totalWateringDuration);
-        
-        if (co2Savings != null) breakdown.put("co2Savings", co2Savings);
-        if (energySavings != null) breakdown.put("energySavings", energySavings);
-        if (moneySavings != null) breakdown.put("moneySavings", moneySavings);
-        if (waterCost != null) breakdown.put("waterCost", waterCost);
-        
-        if (weatherCorrection != null) breakdown.put("weatherCorrection", weatherCorrection);
-        if (efficiencyImprovement != null) breakdown.put("efficiencyImprovement", efficiencyImprovement);
-        if (scheduleOptimization != null) breakdown.put("scheduleOptimization", scheduleOptimization);
-        
-        return breakdown;
-    }
-    
-    /**
-     * Get zone with highest usage
-     */
-    public @Nullable ZoneUsage getZoneWithHighestUsage() {
-        if (byZone == null || byZone.isEmpty()) {
-            return null;
-        }
-        
-        ZoneUsage highest = null;
-        for (ZoneUsage zone : byZone) {
-            if (zone.total != null && (highest == null || zone.total > highest.total)) {
-                highest = zone;
-            }
-        }
-        return highest;
-    }
-    
-    /**
-     * Get zone with highest savings
-     */
-    public @Nullable ZoneUsage getZoneWithHighestSavings() {
-        if (byZone == null || byZone.isEmpty()) {
-            return null;
-        }
-        
-        ZoneUsage highest = null;
-        for (ZoneUsage zone : byZone) {
-            if (zone.savings != null && (highest == null || zone.savings > highest.savings)) {
-                highest = zone;
-            }
-        }
-        return highest;
-    }
-    
-    /**
-     * Get month with highest usage
-     */
-    public @Nullable MonthlyUsage getMonthWithHighestUsage() {
-        if (byMonth == null || byMonth.isEmpty()) {
-            return null;
-        }
-        
-        MonthlyUsage highest = null;
-        for (MonthlyUsage month : byMonth) {
-            if (month.total != null && (highest == null || month.total > highest.total)) {
-                highest = month;
-            }
-        }
-        return highest;
-    }
-    
-    /**
-     * Get month with highest savings
-     */
-    public @Nullable MonthlyUsage getMonthWithHighestSavings() {
-        if (byMonth == null || byMonth.isEmpty()) {
-            return null;
-        }
-        
-        MonthlyUsage highest = null;
-        for (MonthlyUsage month : byMonth) {
-            if (month.savings != null && (highest == null || month.savings > highest.savings)) {
-                highest = month;
-            }
-        }
-        return highest;
-    }
-    
-    @Override
-    public String toString() {
-        return String.format("RachioUsage{device=%s, total=%.1f, savings=%.1f, percentage=%.0f%%}",
-                deviceName != null ? deviceName : deviceId,
-                total != null ? total : 0.0,
-                savings != null ? savings : 0.0,
-                percentage != null ? percentage : 0.0);
     }
 }
