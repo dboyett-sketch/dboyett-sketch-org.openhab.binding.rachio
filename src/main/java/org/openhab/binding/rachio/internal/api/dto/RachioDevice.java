@@ -5,6 +5,7 @@ import org.eclipse.jdt.annotation.Nullable;
 import com.google.gson.annotations.SerializedName;
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * DTO for Rachio Device from Rachio API
