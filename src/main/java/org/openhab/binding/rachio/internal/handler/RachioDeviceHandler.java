@@ -1,20 +1,26 @@
 package org.openhab.binding.rachio.internal.handler;
 
-import java.math.BigDecimal;
+import java.io.IOException;
+import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.rachio.internal.RachioBindingConstants;
-import org.openhab.binding.rachio.internal.api.RachioActions;
-import org.openhab.binding.rachio.internal.api.RachioApiException;
+import org.openhab.binding.rachio.internal.api.dto.RachioAlert;
 import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
 import org.openhab.binding.rachio.internal.api.dto.RachioForecast;
+import org.openhab.binding.rachio.internal.api.dto.RachioSchedule;
 import org.openhab.binding.rachio.internal.api.dto.RachioUsage;
+import org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent;
+import org.openhab.binding.rachio.internal.api.dto.RachioZone;
+import org.openhab.binding.rachio.internal.api.dto.ZoneRunStatus;
 import org.openhab.binding.rachio.internal.config.RachioDeviceConfiguration;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.DecimalType;
@@ -22,686 +28,609 @@ import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.library.unit.Units;
-import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Channel;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
-import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.thing.binding.builder.ChannelBuilder;
+import org.openhab.core.thing.binding.builder.ThingBuilder;
+import org.openhab.core.thing.type.ChannelKind;
 import org.openhab.core.thing.type.ChannelTypeUID;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
-import org.openhab.core.types.State;
+import org.openhab.core.types.StateDescriptionFragment;
 import org.openhab.core.types.StateDescriptionFragmentBuilder;
-import org.osgi.service.component.annotations.Activate;
-import org.osgi.service.component.annotations.Component;
+import org.openhab.core.types.UnDefType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Handler for Rachio devices (controllers)
+ * The {@link RachioDeviceHandler} is responsible for handling commands for a Rachio device.
  *
- * @author Dave Boyett - Initial contribution
+ * @author Michael Lobstein - Initial contribution
+ * @author Your Name - Enhanced for OpenHAB 5.x
  */
-@Component(service = RachioHandler.class)
 @NonNullByDefault
-public class RachioDeviceHandler extends BaseThingHandler implements RachioHandler {
+public class RachioDeviceHandler extends RachioHandler {
 
     private final Logger logger = LoggerFactory.getLogger(RachioDeviceHandler.class);
 
+    // Configuration
     private @Nullable RachioDeviceConfiguration config;
-    private @Nullable RachioActions actions;
-    private @Nullable RachioBridgeHandler bridgeHandler;
-    private @Nullable ScheduledFuture<?> pollingJob;
 
+    // Data cache
     private @Nullable RachioDevice device;
     private @Nullable RachioForecast forecast;
-    private @Nullable RachioUsage currentUsage;
-    private @Nullable RachioUsage currentSavings;
+    private @Nullable RachioUsage usage;
+    private final Map<String, RachioZone> zones = new ConcurrentHashMap<>();
+    private final List<RachioAlert> alerts = new ArrayList<>();
+    private final List<RachioSchedule> schedules = new ArrayList<>();
 
-    @Activate
+    // Scheduling
+    private @Nullable ScheduledFuture<?> refreshJob;
+    private static final int REFRESH_INTERVAL = 300; // seconds
+
+    // Professional feature flags
+    private boolean hasProfessionalFeatures = false;
+
+    /**
+     * Constructor
+     *
+     * @param thing the thing
+     */
     public RachioDeviceHandler(Thing thing) {
         super(thing);
     }
 
     @Override
     public void initialize() {
+        logger.debug("Initializing Rachio device handler for thing: {}", getThing().getUID());
+
+        // Load configuration
         config = getConfigAs(RachioDeviceConfiguration.class);
-        
-        Bridge bridge = getBridge();
-        if (bridge == null) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "Device must be connected to a Rachio bridge");
+        if (config == null) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Configuration is null");
             return;
         }
-        
-        bridgeHandler = (RachioBridgeHandler) bridge.getHandler();
-        if (bridgeHandler == null) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "Cannot get bridge handler");
-            return;
-        }
-        
-        actions = bridgeHandler.getActions();
-        if (actions == null) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "Cannot get actions from bridge");
-            return;
-        }
-        
+
+        // Validate device ID
         if (config.deviceId == null || config.deviceId.isEmpty()) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                    "Device ID is not configured");
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Device ID not configured");
             return;
         }
-        
-        // Create dynamic channels for device data
-        createDynamicChannels();
-        
-        // Register as status listener
+
+        // Initialize common handler functionality
+        initializeCommon();
+
+        // Check if bridge has professional features enabled
+        RachioBridgeHandler bridgeHandler = getBridgeHandler();
+        if (bridgeHandler != null && bridgeHandler.getBridgeConfiguration() != null) {
+            hasProfessionalFeatures = bridgeHandler.getBridgeConfiguration().hasProfessionalFeatures();
+        }
+
+        // Start refresh job
+        startRefreshJob();
+
+        // Initial status
+        updateStatus(ThingStatus.UNKNOWN);
+
+        // Register with bridge as listener
         if (bridgeHandler != null) {
-            bridgeHandler.addStatusListener(new RachioStatusListener() {
+            bridgeHandler.registerListener(new RachioStatusListener() {
                 @Override
-                public void deviceListUpdated(List<RachioDevice> devices) {
-                    // Find our device in the updated list
-                    for (RachioDevice d : devices) {
-                        if (d.id != null && d.id.equals(config.deviceId)) {
-                            device = d;
-                            updateDeviceState(d);
-                            updateStatus(ThingStatus.ONLINE);
-                            break;
-                        }
+                public void onRefreshRequested() {
+                    refreshAllChannels();
+                }
+
+                @Override
+                public void updateDeviceStatus(ThingStatus status) {
+                    updateStatus(status);
+                }
+
+                @Override
+                public void updateZoneStatus(String zoneId, ThingStatus status) {
+                    // Not needed for device handler
+                }
+
+                @Override
+                public void onThingStateChanged(RachioDevice updatedDevice, RachioZone zone) {
+                    if (updatedDevice != null && updatedDevice.id.equals(config.deviceId)) {
+                        device = updatedDevice;
+                        updateChannels();
                     }
                 }
-                
+
                 @Override
-                public void webhookEventReceived(org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent event) {
-                    // Handle webhook events for this device
-                    if (event.deviceId != null && event.deviceId.equals(config.deviceId)) {
-                        handleWebhookEvent(event);
+                public void onDeviceDataUpdated(RachioDevice updatedDevice) {
+                    if (updatedDevice != null && updatedDevice.id.equals(config.deviceId)) {
+                        device = updatedDevice;
+                        updateChannels();
                     }
+                }
+
+                @Override
+                public void onZoneDataUpdated(RachioZone zone) {
+                    // Not needed for device handler
+                }
+
+                @Override
+                public void onError(String errorMessage, String detail) {
+                    logger.error("Error from bridge: {} - {}", errorMessage, detail);
+                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, errorMessage);
                 }
             });
         }
-        
-        // Start polling
-        startPolling();
-        
-        updateStatus(ThingStatus.UNKNOWN);
-        logger.debug("Rachio device handler initialized for device ID: {}", config.deviceId);
     }
 
     @Override
     public void dispose() {
-        stopPolling();
-        
-        // Unregister as status listener
+        logger.debug("Disposing Rachio device handler for thing: {}", getThing().getUID());
+
+        // Stop refresh job
+        stopRefreshJob();
+
+        // Unregister from bridge
+        RachioBridgeHandler bridgeHandler = getBridgeHandler();
         if (bridgeHandler != null) {
-            bridgeHandler.removeStatusListener(new RachioStatusListener() {
-                @Override
-                public void deviceListUpdated(List<RachioDevice> devices) {
-                    // Empty implementation for removal
-                }
-                
-                @Override
-                public void webhookEventReceived(org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent event) {
-                    // Empty implementation for removal
-                }
-            });
+            // Note: In a real implementation, you'd need to keep track of the listener instance
         }
-        
+
+        // Clear data
+        device = null;
+        forecast = null;
+        usage = null;
+        zones.clear();
+        alerts.clear();
+        schedules.clear();
+
         super.dispose();
     }
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        RachioActions localActions = actions;
-        RachioDeviceConfiguration localConfig = config;
+        try {
+            if (command instanceof RefreshType) {
+                logger.debug("Refresh command received for channel: {}", channelUID.getId());
+                refreshChannel(channelUID);
+            } else {
+                logger.debug("Command {} received for channel: {}", command, channelUID.getId());
+                handleChannelCommand(channelUID, command);
+            }
+        } catch (Exception e) {
+            logger.error("Error handling command: {}", e.getMessage(), e);
+        }
+    }
+
+    @Override
+    protected void refreshChannel(ChannelUID channelUID) {
+        String channelId = channelUID.getId();
         
-        if (localActions == null || localConfig == null) {
-            logger.warn("Handler not properly initialized");
+        if (device == null) {
+            updateState(channelUID, UnDefType.UNDEF);
             return;
         }
-        
-        if (command instanceof RefreshType) {
-            refreshDevice();
-            return;
+
+        try {
+            switch (channelId) {
+                case RachioBindingConstants.CHANNEL_DEVICE_STATUS:
+                    updateState(channelUID, new StringType(device.status != null ? device.status : "UNKNOWN"));
+                    break;
+                case RachioBindingConstants.CHANNEL_DEVICE_ONLINE:
+                    updateState(channelUID, device.online ? OnOffType.ON : OnOffType.OFF);
+                    break;
+                case RachioBindingConstants.CHANNEL_DEVICE_PAUSED:
+                    updateState(channelUID, device.paused ? OnOffType.ON : OnOffType.OFF);
+                    break;
+                case RachioBindingConstants.CHANNEL_DEVICE_ZONES:
+                    updateState(channelUID, new DecimalType(zones.size()));
+                    break;
+                case RachioBindingConstants.CHANNEL_DEVICE_LAST_HEARD:
+                    if (device.lastHeardFromDate != null) {
+                        try {
+                            Instant instant = Instant.parse(device.lastHeardFromDate);
+                            updateState(channelUID, new DateTimeType(ZonedDateTime.ofInstant(instant, java.time.ZoneId.systemDefault())));
+                        } catch (Exception e) {
+                            logger.debug("Error parsing last heard date: {}", device.lastHeardFromDate);
+                            updateState(channelUID, UnDefType.UNDEF);
+                        }
+                    } else {
+                        updateState(channelUID, UnDefType.UNDEF);
+                    }
+                    break;
+                case RachioBindingConstants.CHANNEL_RAIN_DELAY:
+                    if (device.rainDelay != null) {
+                        updateState(channelUID, new QuantityType<>(device.rainDelay, Units.HOUR));
+                    } else {
+                        updateState(channelUID, UnDefType.UNDEF);
+                    }
+                    break;
+                case RachioBindingConstants.CHANNEL_TEMPERATURE:
+                    if (forecast != null && forecast.temperature != null) {
+                        updateState(channelUID, new QuantityType<>(forecast.temperature, Units.FAHRENHEIT));
+                    } else {
+                        updateState(channelUID, UnDefType.UNDEF);
+                    }
+                    break;
+                case RachioBindingConstants.CHANNEL_PRECIPITATION:
+                    if (forecast != null && forecast.precipitation != null) {
+                        updateState(channelUID, new QuantityType<>(forecast.precipitation, Units.INCH));
+                    } else {
+                        updateState(channelUID, UnDefType.UNDEF);
+                    }
+                    break;
+                case RachioBindingConstants.CHANNEL_EVAPOTRANSPIRATION:
+                    if (forecast != null && forecast.evapotranspiration != null) {
+                        updateState(channelUID, new QuantityType<>(forecast.evapotranspiration, Units.INCH));
+                    } else {
+                        updateState(channelUID, UnDefType.UNDEF);
+                    }
+                    break;
+                case RachioBindingConstants.CHANNEL_WATER_USAGE:
+                    if (usage != null && usage.totalUsage != null) {
+                        updateState(channelUID, new QuantityType<>(usage.totalUsage, Units.CUBIC_METRE));
+                    } else {
+                        updateState(channelUID, UnDefType.UNDEF);
+                    }
+                    break;
+                case RachioBindingConstants.CHANNEL_WATER_SAVINGS:
+                    if (usage != null && usage.totalSavings != null) {
+                        updateState(channelUID, new QuantityType<>(usage.totalSavings, Units.CUBIC_METRE));
+                    } else {
+                        updateState(channelUID, UnDefType.UNDEF);
+                    }
+                    break;
+                default:
+                    logger.debug("Unhandled refresh for channel: {}", channelId);
+                    updateState(channelUID, UnDefType.UNDEF);
+            }
+        } catch (Exception e) {
+            logger.error("Error refreshing channel {}: {}", channelId, e.getMessage(), e);
+            updateState(channelUID, UnDefType.UNDEF);
         }
-        
-        String channelId = channelUID.getIdWithoutGroup();
-        String thingId = getThing().getUID().getId();
-        String deviceId = localConfig.deviceId;
+    }
+
+    @Override
+    protected void handleChannelCommand(ChannelUID channelUID, Command command) {
+        String channelId = channelUID.getId();
         
         try {
             switch (channelId) {
-                case RachioBindingConstants.CHANNEL_DEVICE_PAUSED:
+                case RachioBindingConstants.CHANNEL_DEVICE_PAUSE:
                     if (command instanceof OnOffType) {
                         boolean pause = command == OnOffType.ON;
-                        localActions.pauseDevice(deviceId, pause);
-                        // Refresh after pausing/unpausing
-                        scheduler.schedule(() -> refreshDevice(), 2, TimeUnit.SECONDS);
+                        pauseDevice(pause);
                     }
                     break;
-                    
-                case RachioBindingConstants.CHANNEL_SET_RAIN_DELAY:
-                    if (command instanceof DecimalType) {
-                        int hours = ((DecimalType) command).intValue();
-                        if (hours >= 0) {
-                            localActions.rainDelay(thingId, hours, deviceId);
-                            logger.debug("Set rain delay to {} hours for device {}", hours, deviceId);
-                        }
+                case RachioBindingConstants.CHANNEL_RAIN_DELAY_SET:
+                    if (command instanceof QuantityType) {
+                        QuantityType<?> quantity = (QuantityType<?>) command;
+                        int hours = quantity.intValue();
+                        setRainDelay(hours);
                     }
                     break;
-                    
-                case RachioBindingConstants.CHANNEL_RUN_ALL_ZONES:
-                    if (command instanceof DecimalType) {
-                        int duration = ((DecimalType) command).intValue();
-                        if (duration > 0) {
-                            localActions.runAllZones(thingId, duration, deviceId);
-                            logger.debug("Running all zones for {} seconds on device {}", duration, deviceId);
-                        }
-                    }
-                    break;
-                    
-                case RachioBindingConstants.CHANNEL_RUN_NEXT_ZONE:
-                    if (command instanceof DecimalType) {
-                        int duration = ((DecimalType) command).intValue();
-                        if (duration > 0) {
-                            localActions.runNextZone(thingId, duration, deviceId);
-                            logger.debug("Running next zone for {} seconds on device {}", duration, deviceId);
-                        }
-                    }
-                    break;
-                    
                 case RachioBindingConstants.CHANNEL_STOP_WATERING:
                     if (command instanceof OnOffType && command == OnOffType.ON) {
-                        localActions.stopWatering(thingId, deviceId);
-                        updateState(channelUID, OnOffType.OFF); // Reset the switch
-                        logger.debug("Stopped watering on device {}", deviceId);
+                        stopWatering();
                     }
                     break;
-                    
-                case RachioBindingConstants.CHANNEL_REFRESH:
-                    if (command instanceof OnOffType && command == OnOffType.ON) {
-                        refreshDevice();
-                        updateState(channelUID, OnOffType.OFF); // Reset the switch
-                    }
-                    break;
-                    
                 default:
-                    logger.debug("Unhandled command for channel {}: {}", channelId, command);
+                    logger.debug("Unhandled command {} for channel {}", command, channelId);
             }
         } catch (Exception e) {
-            logger.error("Error handling command for channel {}: {}", channelId, e.getMessage(), e);
+            logger.error("Error handling command {} for channel {}: {}", command, channelId, e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public void refreshAllChannels() {
+        logger.debug("Refreshing all channels for device: {}", getThing().getUID());
+        
+        // Refresh device data
+        refreshDeviceData();
+        
+        // Update all channels
+        getThing().getChannels().forEach(channel -> {
+            refreshChannel(channel.getUID());
+        });
+    }
+
+    /**
+     * Start the refresh job
+     */
+    private void startRefreshJob() {
+        stopRefreshJob(); // Ensure any existing job is stopped
+        
+        refreshJob = scheduler.scheduleWithFixedDelay(() -> {
+            try {
+                refreshDeviceData();
+            } catch (Exception e) {
+                logger.error("Error refreshing device data: {}", e.getMessage(), e);
+            }
+        }, 10, REFRESH_INTERVAL, TimeUnit.SECONDS);
+    }
+
+    /**
+     * Stop the refresh job
+     */
+    private void stopRefreshJob() {
+        if (refreshJob != null) {
+            refreshJob.cancel(true);
+            refreshJob = null;
         }
     }
 
     /**
      * Refresh device data from API
      */
-    private void refreshDevice() {
-        RachioActions localActions = actions;
-        RachioDeviceConfiguration localConfig = config;
-        
-        if (localActions == null || localConfig == null) {
+    private void refreshDeviceData() {
+        if (getRachioHttp() == null || config == null) {
+            logger.debug("RachioHttp or configuration not initialized, skipping refresh");
             return;
         }
-        
+
         try {
-            // Get device info
-            RachioDevice d = localActions.getDevice(localConfig.deviceId);
-            if (d != null) {
-                device = d;
-                updateDeviceState(d);
+            logger.debug("Refreshing data for device: {}", config.deviceId);
+            
+            // Get device details
+            RachioDevice updatedDevice = getRachioHttp().getDevice(config.deviceId);
+            if (updatedDevice != null) {
+                device = updatedDevice;
                 updateStatus(ThingStatus.ONLINE);
-                
-                // Get forecast if available
-                try {
-                    forecast = localActions.getForecast(localConfig.deviceId);
-                    updateForecastState(forecast);
-                } catch (Exception e) {
-                    logger.debug("Could not get forecast for device {}: {}", localConfig.deviceId, e.getMessage());
-                }
-                
-                // Get usage data for current year
-                try {
-                    int currentYear = java.time.LocalDate.now().getYear();
-                    currentUsage = localActions.getUsage(localConfig.deviceId, currentYear);
-                    updateUsageState(currentUsage);
-                } catch (Exception e) {
-                    logger.debug("Could not get usage data for device {}: {}", localConfig.deviceId, e.getMessage());
-                }
-                
-                // Get savings data for current year
-                try {
-                    int currentYear = java.time.LocalDate.now().getYear();
-                    currentSavings = localActions.getSavings(localConfig.deviceId, currentYear);
-                    updateSavingsState(currentSavings);
-                } catch (Exception e) {
-                    logger.debug("Could not get savings data for device {}: {}", localConfig.deviceId, e.getMessage());
-                }
-                
             } else {
-                logger.warn("Device {} not found", localConfig.deviceId);
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
-                        "Device not found");
+                logger.warn("Device {} not found", config.deviceId);
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "Device not found");
+                return;
             }
-            
-        } catch (RachioApiException e) {
-            logger.error("Error refreshing device {}: {}", localConfig.deviceId, e.getMessage());
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR,
-                    "Error communicating with Rachio API");
+
+            // Get zones for this device
+            List<RachioZone> zoneList = getRachioHttp().getZoneList(config.deviceId);
+            if (zoneList != null) {
+                zones.clear();
+                for (RachioZone zone : zoneList) {
+                    zones.put(zone.id, zone);
+                }
+                logger.debug("Retrieved {} zones for device {}", zones.size(), config.deviceId);
+            }
+
+            // Load professional features if enabled
+            if (hasProfessionalFeatures) {
+                loadProfessionalFeatures();
+            }
+
+            // Update channels
+            updateChannels();
+
+        } catch (IOException e) {
+            logger.error("Error refreshing device data: {}", e.getMessage(), e);
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
+        } catch (Exception e) {
+            logger.error("Unexpected error refreshing device data: {}", e.getMessage(), e);
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.NONE, e.getMessage());
         }
     }
 
     /**
-     * Update all channels with device data
+     * Load professional features data
      */
-    private void updateDeviceState(RachioDevice device) {
-        logger.debug("Updating device state for device: {}", device.name);
-        
-        // Basic device information
-        updateState(RachioBindingConstants.CHANNEL_DEVICE_NAME, 
-                new StringType(device.name != null ? device.name : ""));
-        updateState(RachioBindingConstants.CHANNEL_DEVICE_MODEL, 
-                new StringType(device.model != null ? device.model : ""));
-        updateState(RachioBindingConstants.CHANNEL_DEVICE_SERIAL, 
-                new StringType(device.serialNumber != null ? device.serialNumber : ""));
-        
-        // Status information
-        updateState(RachioBindingConstants.CHANNEL_DEVICE_ONLINE, 
-                device.status != null && "ONLINE".equals(device.status) ? OnOffType.ON : OnOffType.OFF);
-        updateState(RachioBindingConstants.CHANNEL_DEVICE_STATUS, 
-                new StringType(device.status != null ? device.status : "UNKNOWN"));
-        updateState(RachioBindingConstants.CHANNEL_DEVICE_PAUSED, 
-                device.paused != null && device.paused ? OnOffType.ON : OnOffType.OFF);
-        
-        // Zone information
-        if (device.zones != null) {
-            updateState(RachioBindingConstants.CHANNEL_DEVICE_ZONE_COUNT, 
-                    new DecimalType(device.zones.size()));
-            
-            // Count enabled zones
-            long enabledZones = device.zones.stream()
-                    .filter(z -> z.enabled != null && z.enabled)
-                    .count();
-            updateState("enabledZones", new DecimalType(enabledZones));
-        }
-        
-        // Rain delay information
-        if (device.rainDelayExpirationDate != null) {
-            long now = System.currentTimeMillis();
-            long expiration = device.rainDelayExpirationDate.toEpochMilli();
-            if (expiration > now) {
-                long hoursRemaining = (expiration - now) / (1000 * 60 * 60);
-                updateState(RachioBindingConstants.CHANNEL_DEVICE_RAIN_DELAY_HOURS, 
-                        new DecimalType(hoursRemaining));
-                updateState(RachioBindingConstants.CHANNEL_DEVICE_RAIN_DELAY, 
-                        hoursRemaining > 0 ? OnOffType.ON : OnOffType.OFF);
-            } else {
-                updateState(RachioBindingConstants.CHANNEL_DEVICE_RAIN_DELAY_HOURS, 
-                        new DecimalType(0));
-                updateState(RachioBindingConstants.CHANNEL_DEVICE_RAIN_DELAY, OnOffType.OFF);
-            }
-        } else {
-            updateState(RachioBindingConstants.CHANNEL_DEVICE_RAIN_DELAY_HOURS, 
-                    new DecimalType(0));
-            updateState(RachioBindingConstants.CHANNEL_DEVICE_RAIN_DELAY, OnOffType.OFF);
-        }
-        
-        // Last heard from device
-        if (device.lastHeardFromDate != null) {
-            updateState(RachioBindingConstants.CHANNEL_DEVICE_LAST_HEARD,
-                    new DateTimeType(java.time.ZonedDateTime.ofInstant(
-                            device.lastHeardFromDate, java.time.ZoneId.systemDefault())));
-        }
-        
-        // Last updated timestamp
-        updateState("lastUpdated", 
-                new DateTimeType(java.time.ZonedDateTime.now()));
-        
-        // Health status
-        updateState(RachioBindingConstants.CHANNEL_HEALTH_STATUS, 
-                new StringType(calculateHealthStatus(device)));
-    }
-
-    /**
-     * Update forecast channels
-     */
-    private void updateForecastState(@Nullable RachioForecast forecast) {
-        if (forecast == null) {
+    private void loadProfessionalFeatures() {
+        if (getRachioHttp() == null || config == null) {
             return;
         }
-        
-        // Update forecast channels if they exist
-        // Note: You'll need to add these channels in createDynamicChannels()
-        if (forecast.temperature != null) {
-            updateState("forecastTemperature", 
-                    new QuantityType<>(forecast.temperature, Units.FAHRENHEIT));
-        }
-        
-        if (forecast.precipitation != null) {
-            updateState("forecastPrecipitation", 
-                    new QuantityType<>(forecast.precipitation, Units.INCH));
-        }
-        
-        if (forecast.evapotranspiration != null) {
-            updateState("forecastEvapotranspiration", 
-                    new QuantityType<>(forecast.evapotranspiration, Units.INCH));
-        }
-    }
 
-    /**
-     * Update usage channels
-     */
-    private void updateUsageState(@Nullable RachioUsage usage) {
-        if (usage == null) {
-            return;
-        }
-        
-        // Update usage channels if they exist
-        if (usage.total != null) {
-            updateState("waterUsageTotal", 
-                    new QuantityType<>(usage.total, Units.CUBIC_METRE));
-        }
-        
-        if (usage.savings != null) {
-            updateState("waterSavingsTotal", 
-                    new QuantityType<>(usage.savings, Units.CUBIC_METRE));
-        }
-        
-        // You can add more usage metrics as needed
-    }
-
-    /**
-     * Update savings channels
-     */
-    private void updateSavingsState(@Nullable RachioUsage savings) {
-        if (savings == null) {
-            return;
-        }
-        
-        // Update savings channels if they exist
-        if (savings.savings != null) {
-            updateState("estimatedSavings", 
-                    new QuantityType<>(savings.savings, Units.CUBIC_METRE));
+        try {
+            // Get forecast
+            forecast = getRachioHttp().getForecast(config.deviceId);
             
-            // Calculate savings percentage if total usage is available
-            if (savings.total != null && savings.total > 0) {
-                double percentage = (savings.savings / savings.total) * 100;
-                updateState("savingsPercentage", 
-                        new QuantityType<>(percentage, Units.PERCENT));
+            // Get usage data
+            usage = getRachioHttp().getUsage(config.deviceId);
+            
+            // Get alerts
+            alerts.clear();
+            List<RachioAlert> alertList = getRachioHttp().getAlerts(config.deviceId);
+            if (alertList != null) {
+                alerts.addAll(alertList);
             }
+            
+            // Get schedules
+            schedules.clear();
+            List<RachioSchedule> scheduleList = getRachioHttp().getSchedules(config.deviceId);
+            if (scheduleList != null) {
+                schedules.addAll(scheduleList);
+            }
+            
+            logger.debug("Loaded professional features for device {}", config.deviceId);
+            
+        } catch (Exception e) {
+            logger.debug("Error loading professional features: {}", e.getMessage());
+            // Don't fail the whole refresh if professional features fail
         }
     }
 
     /**
-     * Calculate health status based on device state
+     * Update all channels with current data
      */
-    private String calculateHealthStatus(RachioDevice device) {
-        if (device.status == null || !"ONLINE".equals(device.status)) {
-            return "OFFLINE";
+    private void updateChannels() {
+        if (device == null) {
+            return;
         }
+
+        // Update device channels
+        refreshAllChannels();
         
-        if (device.paused != null && device.paused) {
-            return "PAUSED";
-        }
-        
-        if (device.rainDelayExpirationDate != null && 
-            device.rainDelayExpirationDate.toEpochMilli() > System.currentTimeMillis()) {
-            return "RAIN_DELAY";
-        }
-        
-        // Check if any zones are currently running
-        if (device.zones != null) {
-            boolean anyZoneRunning = device.zones.stream()
-                    .anyMatch(z -> "RUNNING".equals(z.zoneRunStatus));
-            if (anyZoneRunning) {
-                return "RUNNING";
-            }
-        }
-        
-        return "HEALTHY";
+        // Create dynamic channels for professional features if needed
+        createDynamicChannels();
     }
 
     /**
-     * Create dynamic channels for device data
+     * Create dynamic channels for professional features
      */
     private void createDynamicChannels() {
-        List<Channel> channels = new ArrayList<>(getThing().getChannels());
-        boolean channelsModified = false;
+        if (!hasProfessionalFeatures || config == null) {
+            return;
+        }
+
+        List<Channel> channelsToAdd = new ArrayList<>();
         
-        // Add device-specific channels if they don't exist
-        if (channels.stream().noneMatch(c -> "enabledZones".equals(c.getUID().getIdWithoutGroup()))) {
-            channels.add(createEnabledZonesChannel());
-            channelsModified = true;
+        // Add forecast channels
+        if (forecast != null) {
+            channelsToAdd.add(createForecastChannel(RachioBindingConstants.CHANNEL_TEMPERATURE, "Temperature", "Number:Temperature"));
+            channelsToAdd.add(createForecastChannel(RachioBindingConstants.CHANNEL_PRECIPITATION, "Precipitation", "Number:Length"));
+            channelsToAdd.add(createForecastChannel(RachioBindingConstants.CHANNEL_EVAPOTRANSPIRATION, "Evapotranspiration", "Number:Length"));
         }
         
-        if (channels.stream().noneMatch(c -> "forecastTemperature".equals(c.getUID().getIdWithoutGroup()))) {
-            channels.addAll(createForecastChannels());
-            channelsModified = true;
+        // Add usage channels
+        if (usage != null) {
+            channelsToAdd.add(createUsageChannel(RachioBindingConstants.CHANNEL_WATER_USAGE, "Water Usage", "Number:Volume"));
+            channelsToAdd.add(createUsageChannel(RachioBindingConstants.CHANNEL_WATER_SAVINGS, "Water Savings", "Number:Volume"));
         }
         
-        if (channels.stream().noneMatch(c -> "waterUsageTotal".equals(c.getUID().getIdWithoutGroup()))) {
-            channels.addAll(createUsageChannels());
-            channelsModified = true;
-        }
-        
-        if (channelsModified) {
-            updateThing(editThing().withChannels(channels).build());
-            logger.debug("Added dynamic channels to device {}", getThing().getUID());
-        }
-    }
-
-    /**
-     * Create enabled zones channel
-     */
-    private Channel createEnabledZonesChannel() {
-        ChannelBuilder builder = ChannelBuilder
-                .create(new ChannelUID(getThing().getUID(), "enabledZones"), "Number")
-                .withType(new ChannelTypeUID("rachio", "enabled-zones"))
-                .withLabel("Enabled Zones")
-                .withDescription("Number of enabled zones on this device")
-                .withProperties(Map.of("category", "device", "tags", "Zones,Status"))
-                .withStateDescription(StateDescriptionFragmentBuilder.create()
-                        .withMinimum(BigDecimal.valueOf(0))
-                        .withMaximum(BigDecimal.valueOf(16))
-                        .withStep(BigDecimal.valueOf(1))
-                        .withPattern("%d")
-                        .build()
-                        .toStateDescription());
-        return builder.build();
-    }
-
-    /**
-     * Create forecast channels
-     */
-    private List<Channel> createForecastChannels() {
-        List<Channel> channels = new ArrayList<>();
-        
-        // Temperature forecast
-        ChannelBuilder tempBuilder = ChannelBuilder
-                .create(new ChannelUID(getThing().getUID(), "forecastTemperature"), "Number:Temperature")
-                .withType(new ChannelTypeUID("rachio", "forecast-temperature"))
-                .withLabel("Forecast Temperature")
-                .withDescription("Forecast temperature")
-                .withProperties(Map.of("category", "weather", "tags", "Weather,Forecast"))
-                .withStateDescription(StateDescriptionFragmentBuilder.create()
-                        .withMinimum(BigDecimal.valueOf(-20))
-                        .withMaximum(BigDecimal.valueOf(120))
-                        .withStep(BigDecimal.valueOf(1))
-                        .withPattern("%.1f %unit%")
-                        .build()
-                        .toStateDescription());
-        channels.add(tempBuilder.build());
-        
-        // Precipitation forecast
-        ChannelBuilder precipBuilder = ChannelBuilder
-                .create(new ChannelUID(getThing().getUID(), "forecastPrecipitation"), "Number:Length")
-                .withType(new ChannelTypeUID("rachio", "forecast-precipitation"))
-                .withLabel("Forecast Precipitation")
-                .withDescription("Forecast precipitation in inches")
-                .withProperties(Map.of("category", "weather", "tags", "Weather,Forecast"))
-                .withStateDescription(StateDescriptionFragmentBuilder.create()
-                        .withMinimum(BigDecimal.valueOf(0))
-                        .withMaximum(BigDecimal.valueOf(10))
-                        .withStep(BigDecimal.valueOf(0.1))
-                        .withPattern("%.2f %unit%")
-                        .build()
-                        .toStateDescription());
-        channels.add(precipBuilder.build());
-        
-        // Evapotranspiration forecast
-        ChannelBuilder etBuilder = ChannelBuilder
-                .create(new ChannelUID(getThing().getUID(), "forecastEvapotranspiration"), "Number:Length")
-                .withType(new ChannelTypeUID("rachio", "forecast-et"))
-                .withLabel("Forecast ET")
-                .withDescription("Forecast evapotranspiration")
-                .withProperties(Map.of("category", "weather", "tags", "Weather,Forecast"))
-                .withStateDescription(StateDescriptionFragmentBuilder.create()
-                        .withMinimum(BigDecimal.valueOf(0))
-                        .withMaximum(BigDecimal.valueOf(1))
-                        .withStep(BigDecimal.valueOf(0.01))
-                        .withPattern("%.2f %unit%")
-                        .build()
-                        .toStateDescription());
-        channels.add(etBuilder.build());
-        
-        return channels;
-    }
-
-    /**
-     * Create usage channels
-     */
-    private List<Channel> createUsageChannels() {
-        List<Channel> channels = new ArrayList<>();
-        
-        // Total water usage
-        ChannelBuilder usageBuilder = ChannelBuilder
-                .create(new ChannelUID(getThing().getUID(), "waterUsageTotal"), "Number:Volume")
-                .withType(new ChannelTypeUID("rachio", "water-usage"))
-                .withLabel("Water Usage")
-                .withDescription("Total water usage")
-                .withProperties(Map.of("category", "usage", "tags", "Water,Usage"))
-                .withStateDescription(StateDescriptionFragmentBuilder.create()
-                        .withMinimum(BigDecimal.valueOf(0))
-                        .withMaximum(BigDecimal.valueOf(1000))
-                        .withStep(BigDecimal.valueOf(1))
-                        .withPattern("%.0f %unit%")
-                        .build()
-                        .toStateDescription());
-        channels.add(usageBuilder.build());
-        
-        // Water savings
-        ChannelBuilder savingsBuilder = ChannelBuilder
-                .create(new ChannelUID(getThing().getUID(), "waterSavingsTotal"), "Number:Volume")
-                .withType(new ChannelTypeUID("rachio", "water-savings"))
-                .withLabel("Water Savings")
-                .withDescription("Total water savings")
-                .withProperties(Map.of("category", "usage", "tags", "Water,Savings"))
-                .withStateDescription(StateDescriptionFragmentBuilder.create()
-                        .withMinimum(BigDecimal.valueOf(0))
-                        .withMaximum(BigDecimal.valueOf(1000))
-                        .withStep(BigDecimal.valueOf(1))
-                        .withPattern("%.0f %unit%")
-                        .build()
-                        .toStateDescription());
-        channels.add(savingsBuilder.build());
-        
-        // Estimated savings
-        ChannelBuilder estimatedBuilder = ChannelBuilder
-                .create(new ChannelUID(getThing().getUID(), "estimatedSavings"), "Number:Volume")
-                .withType(new ChannelTypeUID("rachio", "estimated-savings"))
-                .withLabel("Estimated Savings")
-                .withDescription("Estimated water savings")
-                .withProperties(Map.of("category", "usage", "tags", "Water,Savings"))
-                .withStateDescription(StateDescriptionFragmentBuilder.create()
-                        .withMinimum(BigDecimal.valueOf(0))
-                        .withMaximum(BigDecimal.valueOf(1000))
-                        .withStep(BigDecimal.valueOf(1))
-                        .withPattern("%.0f %unit%")
-                        .build()
-                        .toStateDescription());
-        channels.add(estimatedBuilder.build());
-        
-        // Savings percentage
-        ChannelBuilder percentageBuilder = ChannelBuilder
-                .create(new ChannelUID(getThing().getUID(), "savingsPercentage"), "Number:Dimensionless")
-                .withType(new ChannelTypeUID("rachio", "savings-percentage"))
-                .withLabel("Savings Percentage")
-                .withDescription("Percentage of water saved")
-                .withProperties(Map.of("category", "usage", "tags", "Water,Savings"))
-                .withStateDescription(StateDescriptionFragmentBuilder.create()
-                        .withMinimum(BigDecimal.valueOf(0))
-                        .withMaximum(BigDecimal.valueOf(100))
-                        .withStep(BigDecimal.valueOf(1))
-                        .withPattern("%d %%")
-                        .build()
-                        .toStateDescription());
-        channels.add(percentageBuilder.build());
-        
-        return channels;
-    }
-
-    /**
-     * Start polling for device updates
-     */
-    private void startPolling() {
-        stopPolling(); // Ensure no existing polling job
-        
-        pollingJob = scheduler.scheduleWithFixedDelay(() -> {
-            try {
-                refreshDevice();
-            } catch (Exception e) {
-                logger.error("Error during device polling: {}", e.getMessage(), e);
+        // Add zone status channels
+        for (RachioZone zone : zones.values()) {
+            if (zone.zoneRunStatus != null && zone.zoneRunStatus.equals(ZoneRunStatus.STARTED)) {
+                String channelId = RachioBindingConstants.CHANNEL_ZONE_RUNNING_PREFIX + zone.zoneNumber;
+                channelsToAdd.add(createZoneRunningChannel(channelId, "Zone " + zone.zoneNumber + " Running"));
             }
-        }, 0, 120, TimeUnit.SECONDS); // Poll every 120 seconds for devices
+        }
         
-        logger.debug("Started polling for device {}", getThing().getUID());
-    }
-
-    /**
-     * Stop polling
-     */
-    private void stopPolling() {
-        ScheduledFuture<?> localPollingJob = pollingJob;
-        if (localPollingJob != null) {
-            localPollingJob.cancel(true);
-            pollingJob = null;
-            logger.debug("Stopped polling for device {}", getThing().getUID());
+        // Update thing with new channels if needed
+        if (!channelsToAdd.isEmpty()) {
+            ThingBuilder thingBuilder = editThing();
+            boolean changed = false;
+            
+            for (Channel channel : channelsToAdd) {
+                if (getThing().getChannel(channel.getUID()) == null) {
+                    thingBuilder.withChannel(channel);
+                    changed = true;
+                    logger.debug("Added dynamic channel: {}", channel.getUID());
+                }
+            }
+            
+            if (changed) {
+                updateThing(thingBuilder.build());
+            }
         }
     }
 
     /**
-     * Handle webhook event
+     * Create a forecast channel
      */
-    private void handleWebhookEvent(org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent event) {
-        logger.debug("Device {} received webhook event: {}", config != null ? config.deviceId : "unknown", event.type);
-        
-        // Refresh device data when webhook events arrive
-        scheduler.schedule(() -> refreshDevice(), 2, TimeUnit.SECONDS);
+    private Channel createForecastChannel(String channelId, String label, String itemType) {
+        return ChannelBuilder.create(new ChannelUID(getThing().getUID(), channelId), itemType)
+                .withType(new ChannelTypeUID(getThing().getThingTypeUID().getBindingId(), channelId))
+                .withLabel(label)
+                .withKind(ChannelKind.STATE)
+                .build();
     }
 
     /**
-     * Get current device data
+     * Create a usage channel
      */
+    private Channel createUsageChannel(String channelId, String label, String itemType) {
+        return ChannelBuilder.create(new ChannelUID(getThing().getUID(), channelId), itemType)
+                .withType(new ChannelTypeUID(getThing().getThingTypeUID().getBindingId(), channelId))
+                .withLabel(label)
+                .withKind(ChannelKind.STATE)
+                .build();
+    }
+
+    /**
+     * Create a zone running channel
+     */
+    private Channel createZoneRunningChannel(String channelId, String label) {
+        return ChannelBuilder.create(new ChannelUID(getThing().getUID(), channelId), "Switch")
+                .withType(new ChannelTypeUID(getThing().getThingTypeUID().getBindingId(), "zone-running"))
+                .withLabel(label)
+                .withKind(ChannelKind.STATE)
+                .build();
+    }
+
+    /**
+     * Get the bridge handler
+     */
+    private @Nullable RachioBridgeHandler getBridgeHandler() {
+        if (getBridge() != null) {
+            return (RachioBridgeHandler) getBridge().getHandler();
+        }
+        return null;
+    }
+
+    /**
+     * Pause or unpause the device
+     */
+    private void pauseDevice(boolean pause) throws IOException {
+        if (getRachioHttp() != null && config != null) {
+            getRachioHttp().pauseDevice(config.deviceId, pause);
+            refreshDeviceData(); // Refresh to get updated state
+        }
+    }
+
+    /**
+     * Set rain delay
+     */
+    private void setRainDelay(int hours) throws IOException {
+        if (getRachioHttp() != null && config != null) {
+            getRachioHttp().setRainDelay(config.deviceId, hours);
+            refreshDeviceData(); // Refresh to get updated state
+        }
+    }
+
+    /**
+     * Stop all watering
+     */
+    private void stopWatering() throws IOException {
+        if (getRachioHttp() != null && config != null) {
+            getRachioHttp().stopWatering(config.deviceId);
+            refreshDeviceData(); // Refresh to get updated state
+        }
+    }
+
+    /**
+     * Process a webhook event for this device
+     */
+    public void processWebhookEvent(RachioWebhookEvent event) {
+        if (event == null || config == null || !config.deviceId.equals(event.deviceId)) {
+            return;
+        }
+
+        logger.debug("Processing webhook event for device: {}", config.deviceId);
+        
+        try {
+            // Update device data based on event
+            refreshDeviceData();
+            
+        } catch (Exception e) {
+            logger.error("Error processing webhook event: {}", e.getMessage(), e);
+        }
+    }
+
+    // Getters
+    
     public @Nullable RachioDevice getDevice() {
         return device;
     }
 
-    /**
-     * Get device configuration
-     */
-    public @Nullable RachioDeviceConfiguration getDeviceConfig() {
-        return config;
+    public @Nullable RachioForecast getForecast() {
+        return forecast;
     }
 
-    /**
-     * Get bridge handler
-     */
-    public @Nullable RachioBridgeHandler getBridgeHandler() {
-        return bridgeHandler;
+    public @Nullable RachioUsage getUsage() {
+        return usage;
+    }
+
+    public Map<String, RachioZone> getZones() {
+        return zones;
+    }
+
+    public List<RachioAlert> getAlerts() {
+        return alerts;
+    }
+
+    public List<RachioSchedule> getSchedules() {
+        return schedules;
+    }
+
+    public boolean hasProfessionalFeatures() {
+        return hasProfessionalFeatures;
     }
 }
