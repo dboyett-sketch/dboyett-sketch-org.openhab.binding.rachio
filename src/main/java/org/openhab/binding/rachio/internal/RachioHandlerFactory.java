@@ -5,6 +5,7 @@ import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.rachio.internal.handler.RachioBridgeHandler;
 import org.openhab.binding.rachio.internal.handler.RachioDeviceHandler;
 import org.openhab.binding.rachio.internal.handler.RachioZoneHandler;
+import org.openhab.binding.rachio.internal.api.RachioHttp;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingTypeUID;
