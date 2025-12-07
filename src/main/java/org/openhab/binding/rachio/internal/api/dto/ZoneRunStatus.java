@@ -1,167 +1,178 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.eclipse.jdt.annotation.Nullable;
 import com.google.gson.annotations.SerializedName;
-import java.time.Instant;
 
 /**
- * DTO for Zone Run Status from Rachio API
- * Based on Rachio zone watering events
+ * Zone run status enumeration for Rachio zones
  * 
- * @author Dave Boyett - Initial contribution
+ * @author Damion Boyett - Initial contribution
  */
-@NonNullByDefault
-public class ZoneRunStatus {
-    // Run identification
-    @SerializedName("zoneId")
-    public String zoneId;
+public enum ZoneRunStatus {
     
-    @SerializedName("deviceId")
-    public String deviceId;
+    @SerializedName("STARTED")
+    STARTED("STARTED", "Started", "The zone has started watering"),
     
-    @SerializedName("runId")
-    public String runId;
+    @SerializedName("STOPPED")
+    STOPPED("STOPPED", "Stopped", "The zone has stopped watering"),
     
-    // Run status
-    @SerializedName("status")
-    public String status; // STARTED, STOPPED, COMPLETED, PAUSED, RESUMED
+    @SerializedName("COMPLETED")
+    COMPLETED("COMPLETED", "Completed", "The zone has completed watering"),
     
-    @SerializedName("previousStatus")
-    public @Nullable String previousStatus;
+    @SerializedName("PAUSED")
+    PAUSED("PAUSED", "Paused", "The zone watering is paused"),
     
-    // Run timing
-    @SerializedName("startTime")
-    public Instant startTime;
+    @SerializedName("SCHEDULED")
+    SCHEDULED("SCHEDULED", "Scheduled", "The zone is scheduled to run"),
     
-    @SerializedName("endTime")
-    public @Nullable Instant endTime;
+    @SerializedName("SKIPPED")
+    SKIPPED("SKIPPED", "Skipped", "The zone run was skipped"),
     
-    @SerializedName("duration")
-    public int duration; // seconds
+    @SerializedName("ABORTED")
+    ABORTED("ABORTED", "Aborted", "The zone run was aborted"),
     
-    @SerializedName("remainingDuration")
-    public int remainingDuration; // seconds
+    @SerializedName("NOT_RUNNING")
+    NOT_RUNNING("NOT_RUNNING", "Not Running", "The zone is not running");
     
-    @SerializedName("scheduledDuration")
-    public int scheduledDuration; // seconds
+    private final String apiValue;
+    private final String displayName;
+    private final String description;
     
-    // Water usage
-    @SerializedName("waterUsage")
-    public double waterUsage; // gallons
-    
-    @SerializedName("estimatedWaterUsage")
-    public double estimatedWaterUsage; // gallons
-    
-    // Run details
-    @SerializedName("zoneNumber")
-    public int zoneNumber;
-    
-    @SerializedName("zoneName")
-    public String zoneName;
-    
-    @SerializedName("deviceName")
-    public String deviceName;
-    
-    @SerializedName("reason")
-    public @Nullable String reason; // MANUAL, SCHEDULE, QUICK_RUN
-    
-    @SerializedName("scheduleId")
-    public @Nullable String scheduleId;
-    
-    @SerializedName("scheduleName")
-    public @Nullable String scheduleName;
-    
-    // Helper methods
+    ZoneRunStatus(String apiValue, String displayName, String description) {
+        this.apiValue = apiValue;
+        this.displayName = displayName;
+        this.description = description;
+    }
     
     /**
-     * Check if run is active
+     * Get the API value for this status
+     */
+    public String getApiValue() {
+        return apiValue;
+    }
+    
+    /**
+     * Get the display name for this status
+     */
+    public String getDisplayName() {
+        return displayName;
+    }
+    
+    /**
+     * Get the description for this status
+     */
+    public String getDescription() {
+        return description;
+    }
+    
+    /**
+     * Convert from API string value to enum
+     */
+    public static ZoneRunStatus fromApiValue(String apiValue) {
+        if (apiValue == null || apiValue.isEmpty()) {
+            return NOT_RUNNING;
+        }
+        
+        for (ZoneRunStatus status : values()) {
+            if (status.apiValue.equalsIgnoreCase(apiValue)) {
+                return status;
+            }
+        }
+        
+        // Try to match without underscore
+        String normalized = apiValue.toUpperCase().replace("_", "");
+        for (ZoneRunStatus status : values()) {
+            if (status.apiValue.replace("_", "").equalsIgnoreCase(normalized)) {
+                return status;
+            }
+        }
+        
+        return NOT_RUNNING;
+    }
+    
+    /**
+     * Check if the zone is currently active (watering)
      */
     public boolean isActive() {
-        return "STARTED".equals(status) || "RESUMED".equals(status);
+        return this == STARTED || this == PAUSED;
     }
     
     /**
-     * Check if run is completed
+     * Check if the zone has completed its watering cycle
      */
     public boolean isCompleted() {
-        return "COMPLETED".equals(status);
+        return this == COMPLETED;
     }
     
     /**
-     * Check if run was stopped
+     * Check if the zone is scheduled to run
      */
-    public boolean isStopped() {
-        return "STOPPED".equals(status);
+    public boolean isScheduled() {
+        return this == SCHEDULED;
     }
     
     /**
-     * Get elapsed time in seconds
+     * Check if the zone is not running
      */
-    public long getElapsedSeconds() {
-        if (isActive()) {
-            return Instant.now().getEpochSecond() - startTime.getEpochSecond();
-        } else if (endTime != null) {
-            return endTime.getEpochSecond() - startTime.getEpochSecond();
+    public boolean isNotRunning() {
+        return this == STOPPED || this == NOT_RUNNING || this == SKIPPED || this == ABORTED;
+    }
+    
+    /**
+     * Get the OpenHAB string representation
+     */
+    public String toOpenHABString() {
+        switch (this) {
+            case STARTED:
+                return "STARTED";
+            case STOPPED:
+                return "STOPPED";
+            case COMPLETED:
+                return "COMPLETED";
+            case PAUSED:
+                return "PAUSED";
+            case SCHEDULED:
+                return "SCHEDULED";
+            case SKIPPED:
+                return "SKIPPED";
+            case ABORTED:
+                return "ABORTED";
+            case NOT_RUNNING:
+            default:
+                return "NOT_RUNNING";
         }
-        return 0;
     }
     
     /**
-     * Get progress percentage
+     * Parse from OpenHAB string representation
      */
-    public double getProgressPercentage() {
-        if (scheduledDuration > 0) {
-            long elapsed = getElapsedSeconds();
-            return Math.min(100.0, (elapsed * 100.0) / scheduledDuration);
+    public static ZoneRunStatus fromOpenHABString(String ohString) {
+        if (ohString == null || ohString.isEmpty()) {
+            return NOT_RUNNING;
         }
-        return 0.0;
+        
+        switch (ohString.toUpperCase()) {
+            case "STARTED":
+                return STARTED;
+            case "STOPPED":
+                return STOPPED;
+            case "COMPLETED":
+                return COMPLETED;
+            case "PAUSED":
+                return PAUSED;
+            case "SCHEDULED":
+                return SCHEDULED;
+            case "SKIPPED":
+                return SKIPPED;
+            case "ABORTED":
+                return ABORTED;
+            case "NOT_RUNNING":
+            default:
+                return NOT_RUNNING;
+        }
     }
     
-    /**
-     * Get run summary
-     */
-    public String getSummary() {
-        return String.format("Zone %s: %s (%d/%d seconds, %.1f gallons)", 
-            zoneName, status, getElapsedSeconds(), scheduledDuration, waterUsage);
+    @Override
+    public String toString() {
+        return displayName;
     }
-    
-    /**
-     * Get run details map
-     */
-    public java.util.Map<String, Object> getDetails() {
-        java.util.Map<String, Object> details = new java.util.HashMap<>();
-        details.put("zoneId", zoneId);
-        details.put("zoneName", zoneName);
-        details.put("zoneNumber", zoneNumber);
-        details.put("deviceId", deviceId);
-        details.put("deviceName", deviceName);
-        details.put("status", status);
-        details.put("startTime", startTime.toString());
-        if (endTime != null) details.put("endTime", endTime.toString());
-        details.put("duration", duration);
-        details.put("remainingDuration", remainingDuration);
-        details.put("scheduledDuration", scheduledDuration);
-        details.put("waterUsage", waterUsage);
-        details.put("estimatedWaterUsage", estimatedWaterUsage);
-        details.put("elapsedSeconds", getElapsedSeconds());
-        details.put("progressPercentage", getProgressPercentage());
-        if (reason != null) details.put("reason", reason);
-        if (scheduleId != null) details.put("scheduleId", scheduleId);
-        if (scheduleName != null) details.put("scheduleName", scheduleName);
-        if (previousStatus != null) details.put("previousStatus", previousStatus);
-        return details;
-    }
-    
-    // Status constants
-    public static final String STATUS_STARTED = "STARTED";
-    public static final String STATUS_STOPPED = "STOPPED";
-    public static final String STATUS_COMPLETED = "COMPLETED";
-    public static final String STATUS_PAUSED = "PAUSED";
-    public static final String STATUS_RESUMED = "RESUMED";
-    
-    // Reason constants
-    public static final String REASON_MANUAL = "MANUAL";
-    public static final String REASON_SCHEDULE = "SCHEDULE";
-    public static final String REASON_QUICK_RUN = "QUICK_RUN";
 }
