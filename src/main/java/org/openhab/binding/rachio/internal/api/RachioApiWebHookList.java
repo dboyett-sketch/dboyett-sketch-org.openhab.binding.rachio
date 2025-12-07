@@ -2,6 +2,7 @@ package org.openhab.binding.rachio.internal.api;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import java.util.List;
+import org.eclipse.jdt.annotation.Nullable;
 
 /**
  * DTO for Rachio Webhook List from API
