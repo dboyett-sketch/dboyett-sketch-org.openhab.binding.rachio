@@ -1,531 +1,462 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
+import java.time.Instant;
+import java.util.Map;
+
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+
 import com.google.gson.annotations.SerializedName;
 
-import java.time.Instant;
-
 /**
- * DTO for Rachio Webhook Event
- * Based on: Rachio Webhook Event Format
- * https://rachio.readme.io/docs/webhooks
- * 
- * @author Dave Boyett - Initial contribution
+ * DTO representing a Rachio webhook event
+ *
+ * @author Damion Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioWebhookEvent {
+    
     // Event metadata
+    @SerializedName("id")
+    private String id = "";
+    
+    @SerializedName("type")
+    private String type = ""; // CRITICAL: This field was referenced in RachioHttp.java
+    
     @SerializedName("eventType")
-    public String eventType;
+    private String eventType = "";
     
+    @SerializedName("createdAt")
+    private Instant createdAt;
+    
+    @SerializedName("receivedAt")
+    private Instant receivedAt;
+    
+    // Device information
     @SerializedName("deviceId")
-    public String deviceId;
+    private String deviceId = "";
     
-    @SerializedName("timestamp")
-    public Instant timestamp;
+    @SerializedName("deviceName")
+    private String deviceName = "";
+    
+    // Zone information (for zone-related events)
+    @SerializedName("zoneId")
+    private String zoneId = "";
+    
+    @SerializedName("zoneName")
+    private String zoneName = "";
+    
+    @SerializedName("zoneNumber")
+    private Integer zoneNumber = 0;
+    
+    // Event-specific data
+    @SerializedName("data")
+    private Map<String, Object> data = Map.of();
+    
+    @SerializedName("summary")
+    private String summary = "";
+    
+    @SerializedName("description")
+    private String description = "";
+    
+    // Webhook metadata
+    @SerializedName("webhookId")
+    private String webhookId = "";
     
     @SerializedName("externalId")
-    public @Nullable String externalId;
+    private String externalId = "";
     
-    @SerializedName("webhookId")
-    public @Nullable String webhookId;
+    @SerializedName("subscriptionId")
+    private String subscriptionId = "";
     
-    // Event-specific data (varies by eventType)
-    @SerializedName("zone")
-    public @Nullable ZoneEventData zone;
+    // Status information
+    @SerializedName("status")
+    private String status = "";
     
-    @SerializedName("device")
-    public @Nullable DeviceEventData device;
+    @SerializedName("severity")
+    private String severity = "";
     
-    @SerializedName("schedule")
-    public @Nullable ScheduleEventData schedule;
+    @SerializedName("acknowledged")
+    private Boolean acknowledged = false;
     
-    @SerializedName("rainDelay")
-    public @Nullable RainDelayEventData rainDelay;
+    // Additional properties
+    @SerializedName("properties")
+    private Map<String, Object> properties = Map.of();
     
-    @SerializedName("weatherIntelligence")
-    public @Nullable WeatherIntelEventData weatherIntelligence;
-    
-    @SerializedName("waterBudget")
-    public @Nullable WaterBudgetEventData waterBudget;
-    
-    @SerializedName("rainSensor")
-    public @Nullable RainSensorEventData rainSensor;
-    
-    // Nested event data classes
-    
-    public static class ZoneEventData {
-        @SerializedName("id")
-        public String id;
-        
-        @SerializedName("zoneNumber")
-        public int zoneNumber;
-        
-        @SerializedName("name")
-        public String name;
-        
-        @SerializedName("state")
-        public String state; // STARTED, STOPPED, COMPLETED, PAUSED, RESUMED
-        
-        @SerializedName("duration")
-        public int duration; // seconds
-        
-        @SerializedName("startDate")
-        public @Nullable Instant startDate;
-        
-        @SerializedName("endDate")
-        public @Nullable Instant endDate;
-        
-        @SerializedName("totalDuration")
-        public int totalDuration; // seconds
-        
-        @SerializedName("totalWaterUsage")
-        public double totalWaterUsage; // gallons
+    // Getters and setters
+    public String getId() {
+        return id;
     }
     
-    public static class DeviceEventData {
-        @SerializedName("id")
-        public String id;
-        
-        @SerializedName("name")
-        public String name;
-        
-        @SerializedName("status")
-        public String status; // ONLINE, OFFLINE, SLEEP_MODE
-        
-        @SerializedName("previousStatus")
-        public @Nullable String previousStatus;
-        
-        @SerializedName("reason")
-        public @Nullable String reason;
-        
-        @SerializedName("lastConnectivity")
-        public @Nullable Instant lastConnectivity;
+    public void setId(String id) {
+        this.id = id;
     }
     
-    public static class ScheduleEventData {
-        @SerializedName("id")
-        public String id;
-        
-        @SerializedName("name")
-        public String name;
-        
-        @SerializedName("scheduleType")
-        public String scheduleType; // FIXED, FLEX, FLEX_DAILY
-        
-        @SerializedName("state")
-        public String state; // STARTED, STOPPED, SKIPPED, COMPLETED
-        
-        @SerializedName("startDate")
-        public @Nullable Instant startDate;
-        
-        @SerializedName("endDate")
-        public @Nullable Instant endDate;
-        
-        @SerializedName("duration")
-        public int duration; // seconds
-        
-        @SerializedName("totalDuration")
-        public int totalDuration; // seconds
-        
-        @SerializedName("totalWaterUsage")
-        public double totalWaterUsage; // gallons
-        
-        @SerializedName("skipReason")
-        public @Nullable String skipReason;
-        
-        @SerializedName("skipDate")
-        public @Nullable Instant skipDate;
+    // CRITICAL: This getter was referenced in RachioHttp.java
+    public String getType() {
+        return type;
     }
     
-    public static class RainDelayEventData {
-        @SerializedName("id")
-        public String deviceId;
-        
-        @SerializedName("duration")
-        public int duration; // seconds
-        
-        @SerializedName("startDate")
-        public Instant startDate;
-        
-        @SerializedName("endDate")
-        public Instant endDate;
-        
-        @SerializedName("cancelled")
-        public boolean cancelled;
-        
-        @SerializedName("cancelledDate")
-        public @Nullable Instant cancelledDate;
+    public void setType(String type) {
+        this.type = type;
     }
     
-    public static class WeatherIntelEventData {
-        @SerializedName("deviceId")
-        public String deviceId;
-        
-        @SerializedName("type")
-        public String type; // PRECIPITATION, FREEZE, HIGH_WIND, ET
-        
-        @SerializedName("value")
-        public double value;
-        
-        @SerializedName("unit")
-        public String unit;
-        
-        @SerializedName("threshold")
-        public double threshold;
-        
-        @SerializedName("action")
-        public String action; // SKIP, DELAY, REDUCE
-        
-        @SerializedName("actionValue")
-        public double actionValue;
-        
-        @SerializedName("forecastDate")
-        public Instant forecastDate;
-        
-        @SerializedName("effectiveDate")
-        public Instant effectiveDate;
+    public String getEventType() {
+        return eventType;
     }
     
-    public static class WaterBudgetEventData {
-        @SerializedName("deviceId")
-        public String deviceId;
-        
-        @SerializedName("budget")
-        public double budget; // percentage 0-200
-        
-        @SerializedName("previousBudget")
-        public double previousBudget;
-        
-        @SerializedName("effectiveDate")
-        public Instant effectiveDate;
-        
-        @SerializedName("reason")
-        public @Nullable String reason;
+    public void setEventType(String eventType) {
+        this.eventType = eventType;
     }
     
-    public static class RainSensorEventData {
-        @SerializedName("deviceId")
-        public String deviceId;
-        
-        @SerializedName("state")
-        public String state; // WET, DRY
-        
-        @SerializedName("previousState")
-        public @Nullable String previousState;
-        
-        @SerializedName("detectionDate")
-        public Instant detectionDate;
-        
-        @SerializedName("duration")
-        public int duration; // seconds sensor has been in current state
+    public @Nullable Instant getCreatedAt() {
+        return createdAt;
+    }
+    
+    public void setCreatedAt(Instant createdAt) {
+        this.createdAt = createdAt;
+    }
+    
+    public @Nullable Instant getReceivedAt() {
+        return receivedAt;
+    }
+    
+    public void setReceivedAt(Instant receivedAt) {
+        this.receivedAt = receivedAt;
+    }
+    
+    public String getDeviceId() {
+        return deviceId;
+    }
+    
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
+    }
+    
+    public String getDeviceName() {
+        return deviceName;
+    }
+    
+    public void setDeviceName(String deviceName) {
+        this.deviceName = deviceName;
+    }
+    
+    public String getZoneId() {
+        return zoneId;
+    }
+    
+    public void setZoneId(String zoneId) {
+        this.zoneId = zoneId;
+    }
+    
+    public String getZoneName() {
+        return zoneName;
+    }
+    
+    public void setZoneName(String zoneName) {
+        this.zoneName = zoneName;
+    }
+    
+    public Integer getZoneNumber() {
+        return zoneNumber;
+    }
+    
+    public void setZoneNumber(Integer zoneNumber) {
+        this.zoneNumber = zoneNumber;
+    }
+    
+    public Map<String, Object> getData() {
+        return data;
+    }
+    
+    public void setData(Map<String, Object> data) {
+        this.data = data;
+    }
+    
+    public String getSummary() {
+        return summary;
+    }
+    
+    public void setSummary(String summary) {
+        this.summary = summary;
+    }
+    
+    public String getDescription() {
+        return description;
+    }
+    
+    public void setDescription(String description) {
+        this.description = description;
+    }
+    
+    public String getWebhookId() {
+        return webhookId;
+    }
+    
+    public void setWebhookId(String webhookId) {
+        this.webhookId = webhookId;
+    }
+    
+    public String getExternalId() {
+        return externalId;
+    }
+    
+    public void setExternalId(String externalId) {
+        this.externalId = externalId;
+    }
+    
+    public String getSubscriptionId() {
+        return subscriptionId;
+    }
+    
+    public void setSubscriptionId(String subscriptionId) {
+        this.subscriptionId = subscriptionId;
+    }
+    
+    public String getStatus() {
+        return status;
+    }
+    
+    public void setStatus(String status) {
+        this.status = status;
+    }
+    
+    public String getSeverity() {
+        return severity;
+    }
+    
+    public void setSeverity(String severity) {
+        this.severity = severity;
+    }
+    
+    public Boolean isAcknowledged() {
+        return acknowledged;
+    }
+    
+    public void setAcknowledged(Boolean acknowledged) {
+        this.acknowledged = acknowledged;
+    }
+    
+    public Map<String, Object> getProperties() {
+        return properties;
+    }
+    
+    public void setProperties(Map<String, Object> properties) {
+        this.properties = properties;
     }
     
     // Helper methods
+    public boolean isZoneEvent() {
+        return !zoneId.isEmpty();
+    }
     
-    /**
-     * Get event type as enum
-     */
-    public EventType getEventTypeEnum() {
-        try {
-            return EventType.valueOf(eventType);
-        } catch (IllegalArgumentException e) {
-            return EventType.UNKNOWN;
+    public boolean isDeviceEvent() {
+        return !deviceId.isEmpty() && zoneId.isEmpty();
+    }
+    
+    public boolean isSystemEvent() {
+        return deviceId.isEmpty() && zoneId.isEmpty();
+    }
+    
+    public String getEventCategory() {
+        if (type.contains("ZONE")) {
+            return "ZONE";
+        } else if (type.contains("DEVICE")) {
+            return "DEVICE";
+        } else if (type.contains("SCHEDULE")) {
+            return "SCHEDULE";
+        } else if (type.contains("WEATHER")) {
+            return "WEATHER";
+        } else if (type.contains("RAIN")) {
+            return "RAIN";
+        } else if (type.contains("ALERT")) {
+            return "ALERT";
+        } else {
+            return "SYSTEM";
         }
     }
     
-    /**
-     * Check if this is a zone status event
-     */
-    public boolean isZoneStatusEvent() {
-        return EventType.ZONE_STATUS_EVENT.name().equals(eventType);
+    public boolean isCritical() {
+        return "CRITICAL".equalsIgnoreCase(severity) || 
+               "ERROR".equalsIgnoreCase(severity) || 
+               "FATAL".equalsIgnoreCase(severity);
     }
     
-    /**
-     * Check if this is a device status event
-     */
-    public boolean isDeviceStatusEvent() {
-        return EventType.DEVICE_STATUS_EVENT.name().equals(eventType);
+    public boolean isWarning() {
+        return "WARNING".equalsIgnoreCase(severity) || 
+               "ALERT".equalsIgnoreCase(severity);
     }
     
-    /**
-     * Check if this is a schedule status event
-     */
-    public boolean isScheduleStatusEvent() {
-        return EventType.SCHEDULE_STATUS_EVENT.name().equals(eventType);
+    public boolean isInformational() {
+        return "INFO".equalsIgnoreCase(severity) || 
+               "INFORMATIONAL".equalsIgnoreCase(severity) ||
+               severity.isEmpty();
     }
     
-    /**
-     * Check if this is a rain delay event
-     */
-    public boolean isRainDelayEvent() {
-        return EventType.RAIN_DELAY_EVENT.name().equals(eventType);
+    @Nullable
+    public Object getDataValue(String key) {
+        return data.get(key);
     }
     
-    /**
-     * Check if this is a weather intelligence event
-     */
-    public boolean isWeatherIntelEvent() {
-        return EventType.WEATHER_INTELLIGENCE_EVENT.name().equals(eventType);
+    @Nullable
+    public String getDataString(String key) {
+        Object value = data.get(key);
+        return value != null ? value.toString() : null;
     }
     
-    /**
-     * Check if this is a water budget event
-     */
-    public boolean isWaterBudgetEvent() {
-        return EventType.WATER_BUDGET_EVENT.name().equals(eventType);
-    }
-    
-    /**
-     * Check if this is a rain sensor event
-     */
-    public boolean isRainSensorEvent() {
-        return EventType.RAIN_SENSOR_DETECTION_EVENT.name().equals(eventType);
-    }
-    
-    /**
-     * Get zone ID from event (if applicable)
-     */
-    public @Nullable String getZoneId() {
-        if (zone != null) {
-            return zone.id;
-        }
-        return null;
-    }
-    
-    /**
-     * Get zone number from event (if applicable)
-     */
-    public @Nullable Integer getZoneNumber() {
-        if (zone != null) {
-            return zone.zoneNumber;
-        }
-        return null;
-    }
-    
-    /**
-     * Get zone state from event (if applicable)
-     */
-    public @Nullable String getZoneState() {
-        if (zone != null) {
-            return zone.state;
-        }
-        return null;
-    }
-    
-    /**
-     * Get device status from event (if applicable)
-     */
-    public @Nullable String getDeviceStatus() {
-        if (device != null) {
-            return device.status;
-        }
-        return null;
-    }
-    
-    /**
-     * Get schedule ID from event (if applicable)
-     */
-    public @Nullable String getScheduleId() {
-        if (schedule != null) {
-            return schedule.id;
-        }
-        return null;
-    }
-    
-    /**
-     * Get schedule state from event (if applicable)
-     */
-    public @Nullable String getScheduleState() {
-        if (schedule != null) {
-            return schedule.state;
-        }
-        return null;
-    }
-    
-    /**
-     * Get rain delay duration in hours (if applicable)
-     */
-    public @Nullable Double getRainDelayHours() {
-        if (rainDelay != null) {
-            return rainDelay.duration / 3600.0;
-        }
-        return null;
-    }
-    
-    /**
-     * Get water budget percentage (if applicable)
-     */
-    public @Nullable Double getWaterBudget() {
-        if (waterBudget != null) {
-            return waterBudget.budget;
-        }
-        return null;
-    }
-    
-    /**
-     * Get rain sensor state (if applicable)
-     */
-    public @Nullable String getRainSensorState() {
-        if (rainSensor != null) {
-            return rainSensor.state;
-        }
-        return null;
-    }
-    
-    /**
-     * Get event summary
-     */
-    public String getSummary() {
-        StringBuilder sb = new StringBuilder();
-        sb.append("Event: ").append(eventType).append(" on device ").append(deviceId);
-        
-        if (zone != null) {
-            sb.append(", Zone: ").append(zone.name).append(" (").append(zone.state).append(")");
-        }
-        
-        if (device != null) {
-            sb.append(", Device: ").append(device.status);
-        }
-        
-        if (schedule != null) {
-            sb.append(", Schedule: ").append(schedule.name).append(" (").append(schedule.state).append(")");
-        }
-        
-        if (rainDelay != null) {
-            sb.append(", Rain Delay: ").append(rainDelay.duration).append("s");
-            if (rainDelay.cancelled) {
-                sb.append(" (cancelled)");
+    @Nullable
+    public Integer getDataInt(String key) {
+        Object value = data.get(key);
+        if (value instanceof Number) {
+            return ((Number) value).intValue();
+        } else if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException e) {
+                return null;
             }
         }
-        
-        return sb.toString();
+        return null;
     }
     
-    /**
-     * Get event details for logging
-     */
-    public java.util.Map<String, Object> getDetails() {
-        java.util.Map<String, Object> details = new java.util.HashMap<>();
-        details.put("eventType", eventType);
-        details.put("deviceId", deviceId);
-        details.put("timestamp", timestamp.toString());
-        
-        if (zone != null) {
-            java.util.Map<String, Object> zoneDetails = new java.util.HashMap<>();
-            zoneDetails.put("id", zone.id);
-            zoneDetails.put("name", zone.name);
-            zoneDetails.put("zoneNumber", zone.zoneNumber);
-            zoneDetails.put("state", zone.state);
-            zoneDetails.put("duration", zone.duration);
-            details.put("zone", zoneDetails);
+    @Nullable
+    public Double getDataDouble(String key) {
+        Object value = data.get(key);
+        if (value instanceof Number) {
+            return ((Number) value).doubleValue();
+        } else if (value instanceof String) {
+            try {
+                return Double.parseDouble((String) value);
+            } catch (NumberFormatException e) {
+                return null;
+            }
         }
-        
-        if (device != null) {
-            java.util.Map<String, Object> deviceDetails = new java.util.HashMap<>();
-            deviceDetails.put("id", device.id);
-            deviceDetails.put("name", device.name);
-            deviceDetails.put("status", device.status);
-            deviceDetails.put("previousStatus", device.previousStatus);
-            details.put("device", deviceDetails);
+        return null;
+    }
+    
+    @Nullable
+    public Boolean getDataBoolean(String key) {
+        Object value = data.get(key);
+        if (value instanceof Boolean) {
+            return (Boolean) value;
+        } else if (value instanceof String) {
+            return Boolean.parseBoolean((String) value);
+        } else if (value instanceof Number) {
+            return ((Number) value).intValue() != 0;
         }
-        
-        if (schedule != null) {
-            java.util.Map<String, Object> scheduleDetails = new java.util.HashMap<>();
-            scheduleDetails.put("id", schedule.id);
-            scheduleDetails.put("name", schedule.name);
-            scheduleDetails.put("state", schedule.state);
-            scheduleDetails.put("duration", schedule.duration);
-            details.put("schedule", scheduleDetails);
+        return null;
+    }
+    
+    // Common event data accessors
+    @Nullable
+    public String getZoneStatus() {
+        return getDataString("status");
+    }
+    
+    @Nullable
+    public Integer getDuration() {
+        return getDataInt("duration");
+    }
+    
+    @Nullable
+    public Double getWaterVolume() {
+        return getDataDouble("waterVolume");
+    }
+    
+    @Nullable
+    public String getDeviceStatus() {
+        return getDataString("status");
+    }
+    
+    @Nullable
+    public Integer getRainDelayHours() {
+        return getDataInt("hours");
+    }
+    
+    @Nullable
+    public Double getRainfall() {
+        return getDataDouble("rainfall");
+    }
+    
+    @Nullable
+    public Double getEvapotranspiration() {
+        return getDataDouble("evapotranspiration");
+    }
+    
+    @Nullable
+    public String getScheduleStatus() {
+        return getDataString("status");
+    }
+    
+    @Nullable
+    public String getAlertType() {
+        return getDataString("alertType");
+    }
+    
+    @Nullable
+    public String getAlertMessage() {
+        return getDataString("message");
+    }
+    
+    public String getFormattedTimestamp() {
+        if (createdAt == null) {
+            return "Unknown time";
         }
-        
-        if (rainDelay != null) {
-            java.util.Map<String, Object> rainDelayDetails = new java.util.HashMap<>();
-            rainDelayDetails.put("duration", rainDelay.duration);
-            rainDelayDetails.put("startDate", rainDelay.startDate.toString());
-            rainDelayDetails.put("endDate", rainDelay.endDate.toString());
-            rainDelayDetails.put("cancelled", rainDelay.cancelled);
-            details.put("rainDelay", rainDelayDetails);
+        return createdAt.toString(); // Could use DateTimeFormatter for better formatting
+    }
+    
+    public String getEventDisplayName() {
+        switch (type) {
+            case "ZONE_STATUS":
+                return "Zone Status";
+            case "ZONE_STARTED":
+                return "Zone Started";
+            case "ZONE_STOPPED":
+                return "Zone Stopped";
+            case "ZONE_COMPLETED":
+                return "Zone Completed";
+            case "ZONE_CYCLE_COMPLETED":
+                return "Zone Cycle Completed";
+            case "ZONE_SKIPPED":
+                return "Zone Skipped";
+            case "DEVICE_STATUS":
+                return "Device Status";
+            case "DEVICE_ONLINE":
+                return "Device Online";
+            case "DEVICE_OFFLINE":
+                return "Device Offline";
+            case "RAIN_DELAY_STARTED":
+                return "Rain Delay Started";
+            case "RAIN_DELAY_ENDED":
+                return "Rain Delay Ended";
+            case "WEATHER_INTEL":
+                return "Weather Intelligence";
+            case "WEATHER_SKIP":
+                return "Weather Skip";
+            case "WATER_BUDGET":
+                return "Water Budget";
+            case "SCHEDULE_STATUS":
+                return "Schedule Status";
+            case "SCHEDULE_STARTED":
+                return "Schedule Started";
+            case "SCHEDULE_COMPLETED":
+                return "Schedule Completed";
+            case "SCHEDULE_SKIPPED":
+                return "Schedule Skipped";
+            case "RAIN_SENSOR_DETECTION":
+                return "Rain Sensor Detection";
+            case "ALERT":
+                return "Alert";
+            case "SERVICE":
+                return "Service";
+            default:
+                return type.replace("_", " ");
         }
-        
-        return details;
     }
     
-    /**
-     * Check if zone started event
-     */
-    public boolean isZoneStarted() {
-        return isZoneStatusEvent() && zone != null && "STARTED".equals(zone.state);
-    }
-    
-    /**
-     * Check if zone stopped event
-     */
-    public boolean isZoneStopped() {
-        return isZoneStatusEvent() && zone != null && "STOPPED".equals(zone.state);
-    }
-    
-    /**
-     * Check if zone completed event
-     */
-    public boolean isZoneCompleted() {
-        return isZoneStatusEvent() && zone != null && "COMPLETED".equals(zone.state);
-    }
-    
-    /**
-     * Check if device came online
-     */
-    public boolean isDeviceOnline() {
-        return isDeviceStatusEvent() && device != null && "ONLINE".equals(device.status);
-    }
-    
-    /**
-     * Check if device went offline
-     */
-    public boolean isDeviceOffline() {
-        return isDeviceStatusEvent() && device != null && "OFFLINE".equals(device.status);
-    }
-    
-    /**
-     * Check if rain delay started
-     */
-    public boolean isRainDelayStarted() {
-        return isRainDelayEvent() && rainDelay != null && !rainDelay.cancelled;
-    }
-    
-    /**
-     * Check if rain delay cancelled
-     */
-    public boolean isRainDelayCancelled() {
-        return isRainDelayEvent() && rainDelay != null && rainDelay.cancelled;
-    }
-    
-    /**
-     * Check if schedule started
-     */
-    public boolean isScheduleStarted() {
-        return isScheduleStatusEvent() && schedule != null && "STARTED".equals(schedule.state);
-    }
-    
-    /**
-     * Check if schedule skipped
-     */
-    public boolean isScheduleSkipped() {
-        return isScheduleStatusEvent() && schedule != null && "SKIPPED".equals(schedule.state);
-    }
-    
-    /**
-     * Event type enum
-     */
-    public enum EventType {
-        ZONE_STATUS_EVENT,
-        DEVICE_STATUS_EVENT,
-        SCHEDULE_STATUS_EVENT,
-        RAIN_DELAY_EVENT,
-        WEATHER_INTELLIGENCE_EVENT,
-        WATER_BUDGET_EVENT,
-        RAIN_SENSOR_DETECTION_EVENT,
-        UNKNOWN
+    @Override
+    public String toString() {
+        return String.format("RachioWebhookEvent[id=%s, type=%s, device=%s, zone=%s, time=%s]", 
+            id, type, deviceId, zoneId, createdAt);
     }
 }
