@@ -2,6 +2,8 @@ package org.openhab.binding.rachio.internal.api.dto;
 
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -10,670 +12,612 @@ import org.eclipse.jdt.annotation.Nullable;
 import com.google.gson.annotations.SerializedName;
 
 /**
- * DTO for Rachio weather forecast data
+ * DTO representing Rachio weather forecast data
  *
- * @author Dave Boyett - Initial contribution
+ * @author Damion Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioForecast {
-
-    // Forecast summary
-    @SerializedName("summary")
-    public @Nullable Summary summary;
     
-    @SerializedName("currentConditions")
-    public @Nullable CurrentConditions currentConditions;
+    // Forecast metadata
+    @SerializedName("deviceId")
+    private String deviceId = "";
     
-    @SerializedName("hourlyForecast")
-    public @Nullable List<HourlyForecast> hourlyForecast;
-    
-    @SerializedName("dailyForecast")
-    public @Nullable List<DailyForecast> dailyForecast;
+    @SerializedName("forecastGeneratedAt")
+    private Instant forecastGeneratedAt;
     
     @SerializedName("units")
-    public @Nullable String units;
+    private String units = "US"; // "US" or "METRIC"
     
-    @SerializedName("generatedAt")
-    public @Nullable Instant generatedAt;
+    @SerializedName("timezone")
+    private String timezone = "";
     
-    @SerializedName("validFor")
-    public @Nullable Instant validFor;
+    // Current conditions (was causing compilation errors)
+    @SerializedName("temperature")
+    private Double temperature; // in Fahrenheit or Celsius
     
-    @SerializedName("location")
-    public @Nullable Location location;
+    @SerializedName("precipitation")
+    private Double precipitation; // in inches or mm
     
-    @SerializedName("weatherProvider")
-    public @Nullable String weatherProvider;
+    @SerializedName("evapotranspiration")
+    private Double evapotranspiration; // in inches or mm
     
-    /**
-     * Forecast summary
-     */
-    @NonNullByDefault
-    public static class Summary {
-        @SerializedName("today")
-        public @Nullable DaySummary today;
-        
-        @SerializedName("tomorrow")
-        public @Nullable DaySummary tomorrow;
-        
-        @SerializedName("next7Days")
-        public @Nullable Next7DaysSummary next7Days;
-        
-        @SerializedName("wateringRecommendation")
-        public @Nullable String wateringRecommendation;
-        
-        @SerializedName("skipRecommendation")
-        public @Nullable Boolean skipRecommendation;
-        
-        @SerializedName("skipReason")
-        public @Nullable String skipReason;
-        
-        @SerializedName("confidence")
-        public @Nullable Double confidence;
+    // Additional current conditions
+    @SerializedName("humidity")
+    private Double humidity; // percentage
+    
+    @SerializedName("windSpeed")
+    private Double windSpeed; // in mph or km/h
+    
+    @SerializedName("windDirection")
+    private Double windDirection; // degrees
+    
+    @SerializedName("solarRadiation")
+    private Double solarRadiation; // W/m²
+    
+    @SerializedName("cloudCover")
+    private Double cloudCover; // percentage
+    
+    @SerializedName("dewPoint")
+    private Double dewPoint; // in Fahrenheit or Celsius
+    
+    @SerializedName("pressure")
+    private Double pressure; // in hPa
+    
+    @SerializedName("uvIndex")
+    private Double uvIndex;
+    
+    @SerializedName("visibility")
+    private Double visibility; // in miles or km
+    
+    // Forecast intervals (hourly)
+    @SerializedName("hourly")
+    private List<HourlyForecast> hourly = List.of();
+    
+    // Daily forecasts
+    @SerializedName("daily")
+    private List<DailyForecast> daily = List.of();
+    
+    // Weather alerts
+    @SerializedName("alerts")
+    private List<WeatherAlert> alerts = List.of();
+    
+    // Forecast source
+    @SerializedName("source")
+    private String source = "";
+    
+    @SerializedName("sourceUrl")
+    private String sourceUrl = "";
+    
+    // Getters and setters
+    public String getDeviceId() {
+        return deviceId;
     }
     
-    /**
-     * Day summary
-     */
-    @NonNullByDefault
-    public static class DaySummary {
-        @SerializedName("date")
-        public @Nullable LocalDate date;
-        
-        @SerializedName("highTemperature")
-        public @Nullable Double highTemperature;
-        
-        @SerializedName("lowTemperature")
-        public @Nullable Double lowTemperature;
-        
-        @SerializedName("precipitation")
-        public @Nullable Double precipitation;
-        
-        @SerializedName("precipitationProbability")
-        public @Nullable Double precipitationProbability;
-        
-        @SerializedName("precipitationType")
-        public @Nullable String precipitationType;
-        
-        @SerializedName("evapotranspiration")
-        public @Nullable Double evapotranspiration;
-        
-        @SerializedName("solarRadiation")
-        public @Nullable Double solarRadiation;
-        
-        @SerializedName("windSpeed")
-        public @Nullable Double windSpeed;
-        
-        @SerializedName("windGust")
-        public @Nullable Double windGust;
-        
-        @SerializedName("windDirection")
-        public @Nullable String windDirection;
-        
-        @SerializedName("humidity")
-        public @Nullable Double humidity;
-        
-        @SerializedName("cloudCover")
-        public @Nullable Double cloudCover;
-        
-        @SerializedName("uvIndex")
-        public @Nullable Double uvIndex;
-        
-        @SerializedName("condition")
-        public @Nullable String condition;
-        
-        @SerializedName("conditionIcon")
-        public @Nullable String conditionIcon;
-        
-        @SerializedName("wateringAdjustment")
-        public @Nullable Double wateringAdjustment;
-        
-        @SerializedName("skipWatering")
-        public @Nullable Boolean skipWatering;
-        
-        @SerializedName("skipReason")
-        public @Nullable String skipReason;
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
     }
     
-    /**
-     * Next 7 days summary
-     */
-    @NonNullByDefault
-    public static class Next7DaysSummary {
-        @SerializedName("totalPrecipitation")
-        public @Nullable Double totalPrecipitation;
-        
-        @SerializedName("averageTemperature")
-        public @Nullable Double averageTemperature;
-        
-        @SerializedName("totalEvapotranspiration")
-        public @Nullable Double totalEvapotranspiration;
-        
-        @SerializedName("wateringDays")
-        public @Nullable Integer wateringDays;
-        
-        @SerializedName("skipDays")
-        public @Nullable Integer skipDays;
-        
-        @SerializedName("waterSavings")
-        public @Nullable Double waterSavings;
-        
-        @SerializedName("waterSavingsPercentage")
-        public @Nullable Double waterSavingsPercentage;
+    public @Nullable Instant getForecastGeneratedAt() {
+        return forecastGeneratedAt;
     }
     
-    /**
-     * Current conditions
-     */
-    @NonNullByDefault
-    public static class CurrentConditions {
-        @SerializedName("timestamp")
-        public @Nullable Instant timestamp;
-        
-        @SerializedName("temperature")
-        public @Nullable Double temperature;
-        
-        @SerializedName("feelsLike")
-        public @Nullable Double feelsLike;
-        
-        @SerializedName("humidity")
-        public @Nullable Double humidity;
-        
-        @SerializedName("dewPoint")
-        public @Nullable Double dewPoint;
-        
-        @SerializedName("pressure")
-        public @Nullable Double pressure;
-        
-        @SerializedName("windSpeed")
-        public @Nullable Double windSpeed;
-        
-        @SerializedName("windGust")
-        public @Nullable Double windGust;
-        
-        @SerializedName("windDirection")
-        public @Nullable String windDirection;
-        
-        @SerializedName("windDirectionDegrees")
-        public @Nullable Integer windDirectionDegrees;
-        
-        @SerializedName("visibility")
-        public @Nullable Double visibility;
-        
-        @SerializedName("cloudCover")
-        public @Nullable Double cloudCover;
-        
-        @SerializedName("uvIndex")
-        public @Nullable Double uvIndex;
-        
-        @SerializedName("precipitation")
-        public @Nullable Double precipitation;
-        
-        @SerializedName("precipitationType")
-        public @Nullable String precipitationType;
-        
-        @SerializedName("condition")
-        public @Nullable String condition;
-        
-        @SerializedName("conditionIcon")
-        public @Nullable String conditionIcon;
-        
-        @SerializedName("solarRadiation")
-        public @Nullable Double solarRadiation;
-        
-        @SerializedName("evapotranspiration")
-        public @Nullable Double evapotranspiration;
-        
-        @SerializedName("lastRain")
-        public @Nullable Instant lastRain;
-        
-        @SerializedName("rainLast24Hours")
-        public @Nullable Double rainLast24Hours;
+    public void setForecastGeneratedAt(Instant forecastGeneratedAt) {
+        this.forecastGeneratedAt = forecastGeneratedAt;
     }
     
-    /**
-     * Hourly forecast
-     */
-    @NonNullByDefault
-    public static class HourlyForecast {
-        @SerializedName("timestamp")
-        public @Nullable Instant timestamp;
-        
-        @SerializedName("hour")
-        public @Nullable Integer hour;
-        
-        @SerializedName("temperature")
-        public @Nullable Double temperature;
-        
-        @SerializedName("feelsLike")
-        public @Nullable Double feelsLike;
-        
-        @SerializedName("humidity")
-        public @Nullable Double humidity;
-        
-        @SerializedName("dewPoint")
-        public @Nullable Double dewPoint;
-        
-        @SerializedName("pressure")
-        public @Nullable Double pressure;
-        
-        @SerializedName("windSpeed")
-        public @Nullable Double windSpeed;
-        
-        @SerializedName("windGust")
-        public @Nullable Double windGust;
-        
-        @SerializedName("windDirection")
-        public @Nullable String windDirection;
-        
-        @SerializedName("windDirectionDegrees")
-        public @Nullable Integer windDirectionDegrees;
-        
-        @SerializedName("cloudCover")
-        public @Nullable Double cloudCover;
-        
-        @SerializedName("precipitation")
-        public @Nullable Double precipitation;
-        
-        @SerializedName("precipitationProbability")
-        public @Nullable Double precipitationProbability;
-        
-        @SerializedName("precipitationType")
-        public @Nullable String precipitationType;
-        
-        @SerializedName("condition")
-        public @Nullable String condition;
-        
-        @SerializedName("conditionIcon")
-        public @Nullable String conditionIcon;
-        
-        @SerializedName("solarRadiation")
-        public @Nullable Double solarRadiation;
-        
-        @SerializedName("evapotranspiration")
-        public @Nullable Double evapotranspiration;
-        
-        @SerializedName("freezeRisk")
-        public @Nullable Double freezeRisk;
-        
-        @SerializedName("wateringValue")
-        public @Nullable Double wateringValue;
-        
-        @SerializedName("skipWatering")
-        public @Nullable Boolean skipWatering;
+    public String getUnits() {
+        return units;
     }
     
-    /**
-     * Daily forecast
-     */
-    @NonNullByDefault
-    public static class DailyForecast {
-        @SerializedName("date")
-        public @Nullable LocalDate date;
-        
-        @SerializedName("dayOfWeek")
-        public @Nullable String dayOfWeek;
-        
-        @SerializedName("highTemperature")
-        public @Nullable Double highTemperature;
-        
-        @SerializedName("lowTemperature")
-        public @Nullable Double lowTemperature;
-        
-        @SerializedName("averageTemperature")
-        public @Nullable Double averageTemperature;
-        
-        @SerializedName("morningTemperature")
-        public @Nullable Double morningTemperature;
-        
-        @SerializedName("afternoonTemperature")
-        public @Nullable Double afternoonTemperature;
-        
-        @SerializedName("eveningTemperature")
-        public @Nullable Double eveningTemperature;
-        
-        @SerializedName("nightTemperature")
-        public @Nullable Double nightTemperature;
-        
-        @SerializedName("precipitation")
-        public @Nullable Double precipitation;
-        
-        @SerializedName("precipitationProbability")
-        public @Nullable Double precipitationProbability;
-        
-        @SerializedName("precipitationType")
-        public @Nullable String precipitationType;
-        
-        @SerializedName("snowfall")
-        public @Nullable Double snowfall;
-        
-        @SerializedName("snowDepth")
-        public @Nullable Double snowDepth;
-        
-        @SerializedName("windSpeed")
-        public @Nullable Double windSpeed;
-        
-        @SerializedName("windGust")
-        public @Nullable Double windGust;
-        
-        @SerializedName("windDirection")
-        public @Nullable String windDirection;
-        
-        @SerializedName("humidity")
-        public @Nullable Double humidity;
-        
-        @SerializedName("dewPoint")
-        public @Nullable Double dewPoint;
-        
-        @SerializedName("cloudCover")
-        public @Nullable Double cloudCover;
-        
-        @SerializedName("uvIndex")
-        public @Nullable Double uvIndex;
-        
-        @SerializedName("visibility")
-        public @Nullable Double visibility;
-        
-        @SerializedName("sunrise")
-        public @Nullable String sunrise;
-        
-        @SerializedName("sunset")
-        public @Nullable String sunset;
-        
-        @SerializedName("moonPhase")
-        public @Nullable String moonPhase;
-        
-        @SerializedName("condition")
-        public @Nullable String condition;
-        
-        @SerializedName("conditionIcon")
-        public @Nullable String conditionIcon;
-        
-        @SerializedName("solarRadiation")
-        public @Nullable Double solarRadiation;
-        
-        @SerializedName("evapotranspiration")
-        public @Nullable Double evapotranspiration;
-        
-        @SerializedName("wateringAdjustment")
-        public @Nullable Double wateringAdjustment;
-        
-        @SerializedName("skipWatering")
-        public @Nullable Boolean skipWatering;
-        
-        @SerializedName("skipReason")
-        public @Nullable String skipReason;
-        
-        @SerializedName("freezeRisk")
-        public @Nullable Double freezeRisk;
-        
-        @SerializedName("wateringValue")
-        public @Nullable Double wateringValue;
-        
-        @SerializedName("etWateringAdjustment")
-        public @Nullable Double etWateringAdjustment;
-        
-        @SerializedName("rainWateringAdjustment")
-        public @Nullable Double rainWateringAdjustment;
-        
-        @SerializedName("windWateringAdjustment")
-        public @Nullable Double windWateringAdjustment;
-        
-        @SerializedName("humidityWateringAdjustment")
-        public @Nullable Double humidityWateringAdjustment;
-        
-        @SerializedName("temperatureWateringAdjustment")
-        public @Nullable Double temperatureWateringAdjustment;
+    public void setUnits(String units) {
+        this.units = units;
     }
     
-    /**
-     * Location information
-     */
-    @NonNullByDefault
-    public static class Location {
-        @SerializedName("latitude")
-        public @Nullable Double latitude;
-        
-        @SerializedName("longitude")
-        public @Nullable Double longitude;
-        
-        @SerializedName("elevation")
-        public @Nullable Double elevation;
-        
-        @SerializedName("timezone")
-        public @Nullable String timezone;
-        
-        @SerializedName("city")
-        public @Nullable String city;
-        
-        @SerializedName("state")
-        public @Nullable String state;
-        
-        @SerializedName("country")
-        public @Nullable String country;
-        
-        @SerializedName("zipCode")
-        public @Nullable String zipCode;
-        
-        @SerializedName("stationId")
-        public @Nullable String stationId;
-        
-        @SerializedName("stationDistance")
-        public @Nullable Double stationDistance;
-        
-        @SerializedName("stationName")
-        public @Nullable String stationName;
+    public String getTimezone() {
+        return timezone;
     }
     
-    // Utility methods
+    public void setTimezone(String timezone) {
+        this.timezone = timezone;
+    }
     
-    /**
-     * Get today's forecast
-     */
-    public @Nullable DaySummary getToday() {
-        if (summary != null && summary.today != null) {
-            return summary.today;
+    // CRITICAL: These were the missing fields causing compilation errors
+    public @Nullable Double getTemperature() {
+        return temperature;
+    }
+    
+    public void setTemperature(Double temperature) {
+        this.temperature = temperature;
+    }
+    
+    public @Nullable Double getPrecipitation() {
+        return precipitation;
+    }
+    
+    public void setPrecipitation(Double precipitation) {
+        this.precipitation = precipitation;
+    }
+    
+    public @Nullable Double getEvapotranspiration() {
+        return evapotranspiration;
+    }
+    
+    public void setEvapotranspiration(Double evapotranspiration) {
+        this.evapotranspiration = evapotranspiration;
+    }
+    
+    public @Nullable Double getHumidity() {
+        return humidity;
+    }
+    
+    public void setHumidity(Double humidity) {
+        this.humidity = humidity;
+    }
+    
+    public @Nullable Double getWindSpeed() {
+        return windSpeed;
+    }
+    
+    public void setWindSpeed(Double windSpeed) {
+        this.windSpeed = windSpeed;
+    }
+    
+    public @Nullable Double getWindDirection() {
+        return windDirection;
+    }
+    
+    public void setWindDirection(Double windDirection) {
+        this.windDirection = windDirection;
+    }
+    
+    public @Nullable Double getSolarRadiation() {
+        return solarRadiation;
+    }
+    
+    public void setSolarRadiation(Double solarRadiation) {
+        this.solarRadiation = solarRadiation;
+    }
+    
+    public @Nullable Double getCloudCover() {
+        return cloudCover;
+    }
+    
+    public void setCloudCover(Double cloudCover) {
+        this.cloudCover = cloudCover;
+    }
+    
+    public @Nullable Double getDewPoint() {
+        return dewPoint;
+    }
+    
+    public void setDewPoint(Double dewPoint) {
+        this.dewPoint = dewPoint;
+    }
+    
+    public @Nullable Double getPressure() {
+        return pressure;
+    }
+    
+    public void setPressure(Double pressure) {
+        this.pressure = pressure;
+    }
+    
+    public @Nullable Double getUvIndex() {
+        return uvIndex;
+    }
+    
+    public void setUvIndex(Double uvIndex) {
+        this.uvIndex = uvIndex;
+    }
+    
+    public @Nullable Double getVisibility() {
+        return visibility;
+    }
+    
+    public void setVisibility(Double visibility) {
+        this.visibility = visibility;
+    }
+    
+    public List<HourlyForecast> getHourly() {
+        return hourly;
+    }
+    
+    public void setHourly(List<HourlyForecast> hourly) {
+        this.hourly = hourly;
+    }
+    
+    public List<DailyForecast> getDaily() {
+        return daily;
+    }
+    
+    public void setDaily(List<DailyForecast> daily) {
+        this.daily = daily;
+    }
+    
+    public List<WeatherAlert> getAlerts() {
+        return alerts;
+    }
+    
+    public void setAlerts(List<WeatherAlert> alerts) {
+        this.alerts = alerts;
+    }
+    
+    public String getSource() {
+        return source;
+    }
+    
+    public void setSource(String source) {
+        this.source = source;
+    }
+    
+    public String getSourceUrl() {
+        return sourceUrl;
+    }
+    
+    public void setSourceUrl(String sourceUrl) {
+        this.sourceUrl = sourceUrl;
+    }
+    
+    // Helper methods
+    public boolean isMetric() {
+        return "METRIC".equalsIgnoreCase(units);
+    }
+    
+    public String getTemperatureUnit() {
+        return isMetric() ? "°C" : "°F";
+    }
+    
+    public String getPrecipitationUnit() {
+        return isMetric() ? "mm" : "in";
+    }
+    
+    public String getWindSpeedUnit() {
+        return isMetric() ? "km/h" : "mph";
+    }
+    
+    public String getPressureUnit() {
+        return "hPa";
+    }
+    
+    public String getVisibilityUnit() {
+        return isMetric() ? "km" : "mi";
+    }
+    
+    public @Nullable HourlyForecast getCurrentHourlyForecast() {
+        if (hourly.isEmpty()) {
+            return null;
         }
-        return null;
-    }
-    
-    /**
-     * Get tomorrow's forecast
-     */
-    public @Nullable DaySummary getTomorrow() {
-        if (summary != null && summary.tomorrow != null) {
-            return summary.tomorrow;
-        }
-        return null;
-    }
-    
-    /**
-     * Get next 7 days summary
-     */
-    public @Nullable Next7DaysSummary getNext7Days() {
-        if (summary != null && summary.next7Days != null) {
-            return summary.next7Days;
-        }
-        return null;
-    }
-    
-    /**
-     * Get watering recommendation
-     */
-    public @Nullable String getWateringRecommendation() {
-        if (summary != null && summary.wateringRecommendation != null) {
-            return summary.wateringRecommendation;
-        }
-        return null;
-    }
-    
-    /**
-     * Check if watering should be skipped today
-     */
-    public boolean shouldSkipWateringToday() {
-        DaySummary today = getToday();
-        return today != null && today.skipWatering != null && today.skipWatering;
-    }
-    
-    /**
-     * Get skip reason for today
-     */
-    public @Nullable String getSkipReasonToday() {
-        DaySummary today = getToday();
-        if (today != null && today.skipReason != null) {
-            return today.skipReason;
-        }
-        if (summary != null && summary.skipReason != null) {
-            return summary.skipReason;
-        }
-        return null;
-    }
-    
-    /**
-     * Get today's evapotranspiration
-     */
-    public @Nullable Double getEvapotranspirationToday() {
-        DaySummary today = getToday();
-        return today != null ? today.evapotranspiration : null;
-    }
-    
-    /**
-     * Get today's precipitation
-     */
-    public @Nullable Double getPrecipitationToday() {
-        DaySummary today = getToday();
-        return today != null ? today.precipitation : null;
-    }
-    
-    /**
-     * Get today's high temperature
-     */
-    public @Nullable Double getHighTemperatureToday() {
-        DaySummary today = getToday();
-        return today != null ? today.highTemperature : null;
-    }
-    
-    /**
-     * Get today's low temperature
-     */
-    public @Nullable Double getLowTemperatureToday() {
-        DaySummary today = getToday();
-        return today != null ? today.lowTemperature : null;
-    }
-    
-    /**
-     * Get current temperature
-     */
-    public @Nullable Double getCurrentTemperature() {
-        if (currentConditions != null && currentConditions.temperature != null) {
-            return currentConditions.temperature;
-        }
-        return null;
-    }
-    
-    /**
-     * Get current conditions
-     */
-    public @Nullable String getCurrentConditions() {
-        if (currentConditions != null && currentConditions.condition != null) {
-            return currentConditions.condition;
-        }
-        return null;
-    }
-    
-    /**
-     * Get watering adjustment for today
-     */
-    public @Nullable Double getWateringAdjustmentToday() {
-        DaySummary today = getToday();
-        return today != null ? today.wateringAdjustment : null;
-    }
-    
-    /**
-     * Get forecast generation time
-     */
-    public @Nullable Instant getGeneratedAt() {
-        return generatedAt;
-    }
-    
-    /**
-     * Get location information
-     */
-    public @Nullable Location getLocation() {
-        return location;
-    }
-    
-    /**
-     * Get weather provider
-     */
-    public @Nullable String getWeatherProvider() {
-        return weatherProvider;
-    }
-    
-    /**
-     * Check if forecast data is available
-     */
-    public boolean hasForecastData() {
-        return summary != null || currentConditions != null || 
-               (dailyForecast != null && !dailyForecast.isEmpty()) ||
-               (hourlyForecast != null && !hourlyForecast.isEmpty());
-    }
-    
-    /**
-     * Get forecast age in minutes
-     */
-    public @Nullable Long getForecastAgeMinutes() {
-        if (generatedAt != null) {
-            Instant now = Instant.now();
-            long seconds = now.getEpochSecond() - generatedAt.getEpochSecond();
-            return seconds / 60;
-        }
-        return null;
-    }
-    
-    /**
-     * Get formatted forecast summary
-     */
-    public String getFormattedSummary() {
-        StringBuilder sb = new StringBuilder();
-        
-        if (location != null && location.city != null) {
-            sb.append(location.city);
-            if (location.state != null) {
-                sb.append(", ").append(location.state);
-            }
-            sb.append(": ");
-        }
-        
-        DaySummary today = getToday();
-        if (today != null) {
-            sb.append(today.condition != null ? today.condition : "Unknown conditions");
-            
-            if (today.highTemperature != null && today.lowTemperature != null) {
-                sb.append(", High: ").append(String.format("%.0f", today.highTemperature)).append("°");
-                sb.append(", Low: ").append(String.format("%.0f", today.lowTemperature)).append("°");
-            }
-            
-            if (today.precipitationProbability != null && today.precipitationProbability > 0) {
-                sb.append(", Precip: ").append(String.format("%.0f", today.precipitationProbability)).append("%");
-            }
-            
-            if (shouldSkipWateringToday()) {
-                String reason = getSkipReasonToday();
-                sb.append(", Skip watering");
-                if (reason != null) {
-                    sb.append(" (").append(reason).append(")");
-                }
+        Instant now = Instant.now();
+        for (HourlyForecast forecast : hourly) {
+            if (forecast.getTime() != null && !forecast.getTime().isAfter(now)) {
+                return forecast;
             }
         }
-        
-        return sb.toString();
+        return hourly.get(0);
+    }
+    
+    public @Nullable DailyForecast getTodayForecast() {
+        if (daily.isEmpty()) {
+            return null;
+        }
+        LocalDate today = LocalDate.now();
+        for (DailyForecast forecast : daily) {
+            if (forecast.getDate() != null && forecast.getDate().equals(today)) {
+                return forecast;
+            }
+        }
+        return daily.get(0);
+    }
+    
+    public boolean hasActiveAlerts() {
+        return alerts != null && !alerts.isEmpty();
+    }
+    
+    public double getEffectiveEvapotranspiration() {
+        // Calculate effective ET based on crop coefficient (if available)
+        // This would typically be used with zone crop coefficients
+        return evapotranspiration != null ? evapotranspiration : 0.0;
     }
     
     @Override
     public String toString() {
-        return String.format("RachioForecast{generatedAt=%s, hasData=%s, location=%s}",
-                generatedAt, hasForecastData(), 
-                location != null && location.city != null ? location.city : "Unknown");
+        return String.format("RachioForecast[deviceId=%s, temp=%s°%s, precip=%s%s, et=%s%s]", 
+            deviceId, temperature, getTemperatureUnit(), precipitation, getPrecipitationUnit(), 
+            evapotranspiration, getPrecipitationUnit());
+    }
+    
+    /**
+     * Hourly forecast data
+     */
+    public static class HourlyForecast {
+        @SerializedName("time")
+        private Instant time;
+        
+        @SerializedName("temperature")
+        private Double temperature;
+        
+        @SerializedName("precipitation")
+        private Double precipitation;
+        
+        @SerializedName("precipitationProbability")
+        private Double precipitationProbability;
+        
+        @SerializedName("evapotranspiration")
+        private Double evapotranspiration;
+        
+        @SerializedName("humidity")
+        private Double humidity;
+        
+        @SerializedName("windSpeed")
+        private Double windSpeed;
+        
+        @SerializedName("windDirection")
+        private Double windDirection;
+        
+        @SerializedName("solarRadiation")
+        private Double solarRadiation;
+        
+        @SerializedName("cloudCover")
+        private Double cloudCover;
+        
+        @SerializedName("dewPoint")
+        private Double dewPoint;
+        
+        @SerializedName("pressure")
+        private Double pressure;
+        
+        @SerializedName("uvIndex")
+        private Double uvIndex;
+        
+        @SerializedName("visibility")
+        private Double visibility;
+        
+        @SerializedName("icon")
+        private String icon;
+        
+        @SerializedName("summary")
+        private String summary;
+        
+        public @Nullable Instant getTime() { return time; }
+        public void setTime(Instant time) { this.time = time; }
+        
+        public @Nullable Double getTemperature() { return temperature; }
+        public void setTemperature(Double temperature) { this.temperature = temperature; }
+        
+        public @Nullable Double getPrecipitation() { return precipitation; }
+        public void setPrecipitation(Double precipitation) { this.precipitation = precipitation; }
+        
+        public @Nullable Double getPrecipitationProbability() { return precipitationProbability; }
+        public void setPrecipitationProbability(Double precipitationProbability) { this.precipitationProbability = precipitationProbability; }
+        
+        public @Nullable Double getEvapotranspiration() { return evapotranspiration; }
+        public void setEvapotranspiration(Double evapotranspiration) { this.evapotranspiration = evapotranspiration; }
+        
+        public @Nullable Double getHumidity() { return humidity; }
+        public void setHumidity(Double humidity) { this.humidity = humidity; }
+        
+        public @Nullable Double getWindSpeed() { return windSpeed; }
+        public void setWindSpeed(Double windSpeed) { this.windSpeed = windSpeed; }
+        
+        public @Nullable Double getWindDirection() { return windDirection; }
+        public void setWindDirection(Double windDirection) { this.windDirection = windDirection; }
+        
+        public @Nullable Double getSolarRadiation() { return solarRadiation; }
+        public void setSolarRadiation(Double solarRadiation) { this.solarRadiation = solarRadiation; }
+        
+        public @Nullable Double getCloudCover() { return cloudCover; }
+        public void setCloudCover(Double cloudCover) { this.cloudCover = cloudCover; }
+        
+        public @Nullable Double getDewPoint() { return dewPoint; }
+        public void setDewPoint(Double dewPoint) { this.dewPoint = dewPoint; }
+        
+        public @Nullable Double getPressure() { return pressure; }
+        public void setPressure(Double pressure) { this.pressure = pressure; }
+        
+        public @Nullable Double getUvIndex() { return uvIndex; }
+        public void setUvIndex(Double uvIndex) { this.uvIndex = uvIndex; }
+        
+        public @Nullable Double getVisibility() { return visibility; }
+        public void setVisibility(Double visibility) { this.visibility = visibility; }
+        
+        public String getIcon() { return icon != null ? icon : ""; }
+        public void setIcon(String icon) { this.icon = icon; }
+        
+        public String getSummary() { return summary != null ? summary : ""; }
+        public void setSummary(String summary) { this.summary = summary; }
+        
+        public String getFormattedTime(ZoneId zoneId) {
+            if (time == null) return "";
+            return DateTimeFormatter.ofPattern("h a").format(time.atZone(zoneId));
+        }
+        
+        @Override
+        public String toString() {
+            return String.format("HourlyForecast[time=%s, temp=%s, precip=%s]", 
+                time, temperature, precipitation);
+        }
+    }
+    
+    /**
+     * Daily forecast data
+     */
+    public static class DailyForecast {
+        @SerializedName("date")
+        private LocalDate date;
+        
+        @SerializedName("temperatureHigh")
+        private Double temperatureHigh;
+        
+        @SerializedName("temperatureLow")
+        private Double temperatureLow;
+        
+        @SerializedName("precipitation")
+        private Double precipitation;
+        
+        @SerializedName("precipitationProbability")
+        private Double precipitationProbability;
+        
+        @SerializedName("evapotranspiration")
+        private Double evapotranspiration;
+        
+        @SerializedName("humidity")
+        private Double humidity;
+        
+        @SerializedName("windSpeed")
+        private Double windSpeed;
+        
+        @SerializedName("windDirection")
+        private Double windDirection;
+        
+        @SerializedName("solarRadiation")
+        private Double solarRadiation;
+        
+        @SerializedName("cloudCover")
+        private Double cloudCover;
+        
+        @SerializedName("dewPoint")
+        private Double dewPoint;
+        
+        @SerializedName("pressure")
+        private Double pressure;
+        
+        @SerializedName("uvIndex")
+        private Double uvIndex;
+        
+        @SerializedName("sunriseTime")
+        private Instant sunriseTime;
+        
+        @SerializedName("sunsetTime")
+        private Instant sunsetTime;
+        
+        @SerializedName("moonPhase")
+        private Double moonPhase;
+        
+        @SerializedName("icon")
+        private String icon;
+        
+        @SerializedName("summary")
+        private String summary;
+        
+        public @Nullable LocalDate getDate() { return date; }
+        public void setDate(LocalDate date) { this.date = date; }
+        
+        public @Nullable Double getTemperatureHigh() { return temperatureHigh; }
+        public void setTemperatureHigh(Double temperatureHigh) { this.temperatureHigh = temperatureHigh; }
+        
+        public @Nullable Double getTemperatureLow() { return temperatureLow; }
+        public void setTemperatureLow(Double temperatureLow) { this.temperatureLow = temperatureLow; }
+        
+        public @Nullable Double getPrecipitation() { return precipitation; }
+        public void setPrecipitation(Double precipitation) { this.precipitation = precipitation; }
+        
+        public @Nullable Double getPrecipitationProbability() { return precipitationProbability; }
+        public void setPrecipitationProbability(Double precipitationProbability) { this.precipitationProbability = precipitationProbability; }
+        
+        public @Nullable Double getEvapotranspiration() { return evapotranspiration; }
+        public void setEvapotranspiration(Double evapotranspiration) { this.evapotranspiration = evapotranspiration; }
+        
+        public @Nullable Double getHumidity() { return humidity; }
+        public void setHumidity(Double humidity) { this.humidity = humidity; }
+        
+        public @Nullable Double getWindSpeed() { return windSpeed; }
+        public void setWindSpeed(Double windSpeed) { this.windSpeed = windSpeed; }
+        
+        public @Nullable Double getWindDirection() { return windDirection; }
+        public void setWindDirection(Double windDirection) { this.windDirection = windDirection; }
+        
+        public @Nullable Double getSolarRadiation() { return solarRadiation; }
+        public void setSolarRadiation(Double solarRadiation) { this.solarRadiation = solarRadiation; }
+        
+        public @Nullable Double getCloudCover() { return cloudCover; }
+        public void setCloudCover(Double cloudCover) { this.cloudCover = cloudCover; }
+        
+        public @Nullable Double getDewPoint() { return dewPoint; }
+        public void setDewPoint(Double dewPoint) { this.dewPoint = dewPoint; }
+        
+        public @Nullable Double getPressure() { return pressure; }
+        public void setPressure(Double pressure) { this.pressure = pressure; }
+        
+        public @Nullable Double getUvIndex() { return uvIndex; }
+        public void setUvIndex(Double uvIndex) { this.uvIndex = uvIndex; }
+        
+        public @Nullable Instant getSunriseTime() { return sunriseTime; }
+        public void setSunriseTime(Instant sunriseTime) { this.sunriseTime = sunriseTime; }
+        
+        public @Nullable Instant getSunsetTime() { return sunsetTime; }
+        public void setSunsetTime(Instant sunsetTime) { this.sunsetTime = sunsetTime; }
+        
+        public @Nullable Double getMoonPhase() { return moonPhase; }
+        public void setMoonPhase(Double moonPhase) { this.moonPhase = moonPhase; }
+        
+        public String getIcon() { return icon != null ? icon : ""; }
+        public void setIcon(String icon) { this.icon = icon; }
+        
+        public String getSummary() { return summary != null ? summary : ""; }
+        public void setSummary(String summary) { this.summary = summary; }
+        
+        public String getFormattedDate() {
+            if (date == null) return "";
+            return DateTimeFormatter.ofPattern("MMM d").format(date);
+        }
+        
+        @Override
+        public String toString() {
+            return String.format("DailyForecast[date=%s, high=%s, low=%s, precip=%s]", 
+                date, temperatureHigh, temperatureLow, precipitation);
+        }
+    }
+    
+    /**
+     * Weather alert data
+     */
+    public static class WeatherAlert {
+        @SerializedName("title")
+        private String title;
+        
+        @SerializedName("description")
+        private String description;
+        
+        @SerializedName("severity")
+        private String severity;
+        
+        @SerializedName("effective")
+        private Instant effective;
+        
+        @SerializedName("expires")
+        private Instant expires;
+        
+        @SerializedName("uri")
+        private String uri;
+        
+        public String getTitle() { return title != null ? title : ""; }
+        public void setTitle(String title) { this.title = title; }
+        
+        public String getDescription() { return description != null ? description : ""; }
+        public void setDescription(String description) { this.description = description; }
+        
+        public String getSeverity() { return severity != null ? severity : ""; }
+        public void setSeverity(String severity) { this.severity = severity; }
+        
+        public @Nullable Instant getEffective() { return effective; }
+        public void setEffective(Instant effective) { this.effective = effective; }
+        
+        public @Nullable Instant getExpires() { return expires; }
+        public void setExpires(Instant expires) { this.expires = expires; }
+        
+        public String getUri() { return uri != null ? uri : ""; }
+        public void setUri(String uri) { this.uri = uri; }
+        
+        public boolean isActive() {
+            Instant now = Instant.now();
+            return (effective == null || !effective.isAfter(now)) && 
+                   (expires == null || expires.isAfter(now));
+        }
+        
+        @Override
+        public String toString() {
+            return String.format("WeatherAlert[title=%s, severity=%s]", title, severity);
+        }
     }
 }
