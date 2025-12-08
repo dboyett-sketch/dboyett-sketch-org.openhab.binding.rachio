@@ -98,12 +98,6 @@ public class RachioHttp implements RachioActions {
         setZoneEnabled(deviceId, zoneId, enabled, "openhab");
     }
 
-    public void rainDelay(String deviceId, int duration) throws RachioApiException, IOException {
-        String url = BASE_URL + "/device/rain_delay";
-        String json = String.format("{\"id\":\"%s\",\"duration\":%d}", deviceId, duration);
-        executePut(url, json);
-    }
-
     public void runNextZone(String deviceId) throws RachioApiException, IOException {
         runNextZone(deviceId, "openhab");
     }
@@ -155,8 +149,8 @@ public class RachioHttp implements RachioActions {
                 }
             } else {
                 String errorMessage = readErrorMessage(connection);
-                RachioApiException exception = new RachioApiException("API request failed: " + responseCode + " - " + errorMessage, responseCode);
-                handleApiError(responseCode, errorMessage);
+                RachioApiException exception = new RachioApiException("API request failed: " + responseCode + " - " + errorMessage);
+                exceptionHandler.handle(exception);
                 throw exception;
             }
 
@@ -220,18 +214,8 @@ public class RachioHttp implements RachioActions {
     }
 
     private void handleApiError(int statusCode, String errorMessage) {
-        RachioBridgeHandler localBridgeHandler = bridgeHandler;
-        if (localBridgeHandler != null) {
-            if (statusCode == 401) {
-                localBridgeHandler.updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Invalid API key");
-            } else if (statusCode == 429) {
-                localBridgeHandler.updateStatus(ThingStatus.ONLINE, ThingStatusDetail.NONE, "Rate limit exceeded");
-            } else if (statusCode >= 500) {
-                localBridgeHandler.updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "API server error");
-            } else {
-                localBridgeHandler.updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "API error: " + statusCode);
-            }
-        }
+        // Error handling is done through the exception handler
+        logger.debug("API error {}: {}", statusCode, errorMessage);
     }
 
     public int getRateLimitRemaining() {
@@ -254,6 +238,10 @@ public class RachioHttp implements RachioActions {
                     .format(resetInstant);
         }
         return "N/A";
+    }
+
+    public Gson getGson() {
+        return gson;
     }
 
     // Implementation of RachioActions interface methods
