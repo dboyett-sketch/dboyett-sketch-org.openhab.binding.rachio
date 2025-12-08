@@ -1,102 +1,98 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.util.Map;
+import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.eclipse.jdt.annotation.Nullable;
 
 import com.google.gson.annotations.SerializedName;
 
 @NonNullByDefault
 public class RachioZone {
     @SerializedName("id")
-    public String id = "";
+    private String id = "";
     
     @SerializedName("zoneNumber")
-    public int zoneNumber;
+    private int zoneNumber;
     
     @SerializedName("name")
-    public String name = "";
+    private String name = "";
     
     @SerializedName("enabled")
-    public boolean enabled;
-    
-    @SerializedName("customNozzle")
-    public @Nullable CustomNozzle customNozzle;
-    
-    @SerializedName("customSoil")
-    public @Nullable CustomSoil customSoil;
-    
-    @SerializedName("customCrop")
-    public @Nullable CustomCrop customCrop;
-    
-    @SerializedName("customSlope")
-    public @Nullable CustomSlope customSlope;
-    
-    @SerializedName("customShade")
-    public @Nullable CustomShade customShade;
-    
-    @SerializedName("rootZoneDepth")
-    public double rootZoneDepth;
-    
-    @SerializedName("availableWater")
-    public double availableWater;
-    
-    @SerializedName("efficiency")
-    public double efficiency;
-    
-    @SerializedName("yardAreaSquareFeet")
-    public double yardAreaSquareFeet;
-    
-    @SerializedName("maxRuntime")
-    public int maxRuntime;
+    private boolean enabled;
     
     @SerializedName("runtime")
-    public int runtime;
+    private int runtime;
     
-    @SerializedName("imageUrl")
-    public String imageUrl = "";
+    @SerializedName("maxRuntime")
+    private int maxRuntime;
     
-    @SerializedName("lastWateredDate")
-    public long lastWateredDate;
+    @SerializedName("area")
+    private double area;
     
-    // Default constructor for Gson
-    public RachioZone() {
-    }
+    @SerializedName("soilType")
+    private String soilType = "";
     
-    // Helper method to get properties for discovery
-    public void populateProperties(Map<String, String> properties) {
-        properties.put("zoneNumber", String.valueOf(zoneNumber));
-        properties.put("enabled", String.valueOf(enabled));
-        
-        // Fix: Use .name field instead of .getName() method
-        if (customSoil != null && customSoil.name != null) {
-            properties.put("soilType", customSoil.name);
-        }
-        
-        if (customCrop != null && customCrop.name != null) {
-            properties.put("cropType", customCrop.name);
-        }
-        
-        if (customNozzle != null && customNozzle.name != null) {
-            properties.put("nozzleType", customNozzle.name);
-        }
-        
-        if (customSlope != null && customSlope.name != null) {
-            properties.put("slopeType", customSlope.name);
-        }
-        
-        if (customShade != null && customShade.name != null) {
-            properties.put("shadeType", customShade.name);
-        }
-    }
+    @SerializedName("cropType")
+    private String cropType = "";
     
-    // Helper methods
-    public boolean isRunning() {
-        return runtime > 0;
-    }
+    @SerializedName("nozzleType")
+    private String nozzleType = "";
     
-    public double getAreaSquareMeters() {
-        return yardAreaSquareFeet * 0.092903;
+    @SerializedName("slopeType")
+    private String slopeType = "";
+    
+    @SerializedName("shadeType")
+    private String shadeType = "";
+    
+    @SerializedName("rootZoneDepth")
+    private double rootZoneDepth;
+    
+    @SerializedName("efficiency")
+    private double efficiency;
+    
+    @SerializedName("availableWater")
+    private double availableWater;
+    
+    @SerializedName("wateringAdjustmentRuntimes")
+    @Nullable
+    private List<Integer> wateringAdjustmentRuntimes;
+    
+    // Getters
+    public String getId() { return id; }
+    public int getZoneNumber() { return zoneNumber; }
+    public String getName() { return name; }
+    public boolean isEnabled() { return enabled; }
+    public int getRuntime() { return runtime; }
+    public int getMaxRuntime() { return maxRuntime; }
+    public double getArea() { return area; }
+    public String getSoilType() { return soilType; }
+    public String getCropType() { return cropType; }
+    public String getNozzleType() { return nozzleType; }
+    public String getSlopeType() { return slopeType; }
+    public String getShadeType() { return shadeType; }
+    public double getRootZoneDepth() { return rootZoneDepth; }
+    public double getEfficiency() { return efficiency; }
+    public double getAvailableWater() { return availableWater; }
+    @Nullable
+    public List<Integer> getWateringAdjustmentRuntimes() { return wateringAdjustmentRuntimes; }
+    
+    // Setters
+    public void setId(String id) { this.id = id; }
+    public void setZoneNumber(int zoneNumber) { this.zoneNumber = zoneNumber; }
+    public void setName(String name) { this.name = name; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
+    public void setRuntime(int runtime) { this.runtime = runtime; }
+    public void setMaxRuntime(int maxRuntime) { this.maxRuntime = maxRuntime; }
+    public void setArea(double area) { this.area = area; }
+    public void setSoilType(String soilType) { this.soilType = soilType; }
+    public void setCropType(String cropType) { this.cropType = cropType; }
+    public void setNozzleType(String nozzleType) { this.nozzleType = nozzleType; }
+    public void setSlopeType(String slopeType) { this.slopeType = slopeType; }
+    public void setShadeType(String shadeType) { this.shadeType = shadeType; }
+    public void setRootZoneDepth(double rootZoneDepth) { this.rootZoneDepth = rootZoneDepth; }
+    public void setEfficiency(double efficiency) { this.efficiency = efficiency; }
+    public void setAvailableWater(double availableWater) { this.availableWater = availableWater; }
+    public void setWateringAdjustmentRuntimes(@Nullable List<Integer> wateringAdjustmentRuntimes) { 
+        this.wateringAdjustmentRuntimes = wateringAdjustmentRuntimes; 
     }
 }
