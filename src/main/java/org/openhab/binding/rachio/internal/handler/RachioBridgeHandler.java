@@ -22,7 +22,7 @@ import org.openhab.binding.rachio.internal.api.RachioActions;
 import org.openhab.binding.rachio.internal.api.RachioHttp;
 import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
 import org.openhab.binding.rachio.internal.api.dto.RachioPerson;
-import org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent;
+import org.openhab.binding.rachio.internal.api.dto.RachioWebHookEvent;
 import org.openhab.binding.rachio.internal.api.dto.RachioZone;
 import org.openhab.binding.rachio.internal.config.RachioBridgeConfiguration;
 import org.openhab.binding.rachio.internal.discovery.RachioDiscoveryService;
@@ -423,7 +423,7 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
         updateRateLimitReset();
     }
 
-    public void handleWebhookEvent(RachioWebhookEvent event) {
+    public void handleWebhookEvent(RachioWebHookEvent event) {
         logger.debug("Received webhook event: {} for device {}", event.type, event.deviceId);
         
         // Update device status if this is a status event
@@ -449,7 +449,7 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
         }
     }
 
-    private boolean shouldRefreshOnEvent(RachioWebhookEvent event) {
+    private boolean shouldRefreshOnEvent(RachioWebHookEvent event) {
         return "ZONE_STATUS".equals(event.type) || 
                "DEVICE_STATUS".equals(event.type) ||
                "SCHEDULE_STATUS".equals(event.type);
