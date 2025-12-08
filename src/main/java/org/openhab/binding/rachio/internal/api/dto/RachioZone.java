@@ -1,535 +1,410 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.time.Instant;
-import java.time.LocalDateTime;
-import java.time.ZoneId;
-import java.util.List;
-import java.util.Map;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
 import com.google.gson.annotations.SerializedName;
 
 /**
- * DTO representing a Rachio irrigation zone
+ * Data Transfer Object for Rachio Zone with professional irrigation data
  *
- * @author Damion Boyett - Initial contribution
+ * @author Damion Boyett - Enhanced with professional features
  */
 @NonNullByDefault
 public class RachioZone {
-    
-    // Zone identification
     @SerializedName("id")
-    private String id = "";
+    public String id = "";
     
     @SerializedName("zoneNumber")
-    private int zoneNumber = 0;
+    public int zoneNumber;
     
     @SerializedName("name")
-    private String name = "";
+    public String name = "";
     
     @SerializedName("enabled")
-    private boolean enabled = true;
+    public boolean enabled;
     
-    @SerializedName("runtime")
-    private int runtime = 0; // in minutes
-    
-    // Run status (critical field that was missing)
-    @SerializedName("zoneRunStatus")
-    private ZoneRunStatus zoneRunStatus = ZoneRunStatus.NOT_RUNNING;
-    
-    // Soil data
-    @SerializedName("customSoil")
-    private CustomSoil customSoil = new CustomSoil();
-    
-    @SerializedName("availableWater")
-    private double availableWater = 0.0; // inches per foot
-    
-    // Crop data
-    @SerializedName("customCrop")
-    private CustomCrop customCrop = new CustomCrop();
-    
-    @SerializedName("cropCoefficient")
-    private double cropCoefficient = 0.0;
-    
-    // Nozzle data
     @SerializedName("customNozzle")
-    private CustomNozzle customNozzle = new CustomNozzle();
+    public @Nullable CustomNozzle customNozzle;
     
-    @SerializedName("inchesPerHour")
-    private double inchesPerHour = 0.0;
+    @SerializedName("customSoil")
+    public @Nullable CustomSoil customSoil;
     
-    // Slope and shade
+    @SerializedName("customCrop")
+    public @Nullable CustomCrop customCrop;
+    
     @SerializedName("customSlope")
-    private CustomSlope customSlope = new CustomSlope();
+    public @Nullable CustomSlope customSlope;
     
     @SerializedName("customShade")
-    private CustomShade customShade = new CustomShade();
+    public @Nullable CustomShade customShade;
     
-    // Root depth
-    @SerializedName("rootDepth")
-    private double rootDepth = 0.0; // inches
+    @SerializedName("availableWater")
+    public double availableWater;
     
-    // Efficiency
+    @SerializedName("rootZoneDepth")
+    public double rootZoneDepth;
+    
+    @SerializedName("managementAllowedDepletion")
+    public double managementAllowedDepletion;
+    
     @SerializedName("efficiency")
-    private double efficiency = 0.0; // percentage
+    public double efficiency;
     
-    // Water adjustment levels
-    @SerializedName("adjustmentLevel1")
-    private double adjustmentLevel1 = 0.0;
+    @SerializedName("yardAreaSquareFeet")
+    public double yardAreaSquareFeet;
     
-    @SerializedName("adjustmentLevel2")
-    private double adjustmentLevel2 = 0.0;
+    @SerializedName("irrigationAmount")
+    public double irrigationAmount;
     
-    @SerializedName("adjustmentLevel3")
-    private double adjustmentLevel3 = 0.0;
+    @SerializedName("maxRuntime")
+    public int maxRuntime;
     
-    @SerializedName("adjustmentLevel4")
-    private double adjustmentLevel4 = 0.0;
+    @SerializedName("runtime")
+    public int runtime;
     
-    @SerializedName("adjustmentLevel5")
-    private double adjustmentLevel5 = 0.0;
+    @SerializedName("zoneRunStatus")
+    public @Nullable ZoneRunStatus zoneRunStatus;
     
-    // Area
+    // Professional irrigation data
     @SerializedName("area")
-    private double area = 0.0; // square feet
+    public double area;
     
-    // Zone geometry and position
-    @SerializedName("imageUrl")
-    private String imageUrl = "";
-    
-    @SerializedName("sortOrder")
-    private int sortOrder = 0;
-    
-    // Current status
     @SerializedName("lastWateredDate")
-    private Instant lastWateredDate;
+    public @Nullable String lastWateredDate;
     
     @SerializedName("lastRunDuration")
-    private int lastRunDuration = 0; // in seconds
+    public @Nullable Integer lastRunDuration;
     
-    @SerializedName("lastRunStartDate")
-    private Instant lastRunStartDate;
+    @SerializedName("totalWaterUsed")
+    public @Nullable Double totalWaterUsed;
     
-    @SerializedName("lastRunEndDate")
-    private Instant lastRunEndDate;
+    @SerializedName("wateringAdjustmentRuntimes")
+    public int[] wateringAdjustmentRuntimes = new int[5];
     
-    // Schedule information
-    @SerializedName("nextStartDate")
-    private Instant nextStartDate;
+    @SerializedName("imageUrl")
+    public @Nullable String imageUrl;
     
-    @SerializedName("scheduleRules")
-    private List<Object> scheduleRules = List.of();
+    @SerializedName("etCoefficient")
+    public double etCoefficient;
     
-    @SerializedName("flexScheduleRules")
-    private List<Object> flexScheduleRules = List.of();
+    @SerializedName("saturationThreshold")
+    public double saturationThreshold;
     
-    // Watering history
-    @SerializedName("wateringHistory")
-    private List<WateringEvent> wateringHistory = List.of();
+    @SerializedName("depthOfWater")
+    public double depthOfWater;
     
-    // Zone properties
-    @SerializedName("properties")
-    private Map<String, Object> properties = Map.of();
+    @SerializedName("fixedRuntime")
+    public @Nullable Integer fixedRuntime;
     
-    // Getters and setters
+    @SerializedName("forecastData")
+    public @Nullable ZoneForecastData forecastData;
+    
+    // Add getters for all fields
     public String getId() {
         return id;
-    }
-    
-    public void setId(String id) {
-        this.id = id;
     }
     
     public int getZoneNumber() {
         return zoneNumber;
     }
     
-    public void setZoneNumber(int zoneNumber) {
-        this.zoneNumber = zoneNumber;
-    }
-    
     public String getName() {
         return name;
-    }
-    
-    public void setName(String name) {
-        this.name = name;
     }
     
     public boolean isEnabled() {
         return enabled;
     }
     
-    public void setEnabled(boolean enabled) {
-        this.enabled = enabled;
+    @Nullable
+    public CustomNozzle getCustomNozzle() {
+        return customNozzle;
     }
     
-    public int getRuntime() {
-        return runtime;
-    }
-    
-    public void setRuntime(int runtime) {
-        this.runtime = runtime;
-    }
-    
-    // CRITICAL: This was the missing field causing compilation errors
-    public ZoneRunStatus getZoneRunStatus() {
-        return zoneRunStatus;
-    }
-    
-    public void setZoneRunStatus(ZoneRunStatus zoneRunStatus) {
-        this.zoneRunStatus = zoneRunStatus;
-    }
-    
+    @Nullable
     public CustomSoil getCustomSoil() {
         return customSoil;
     }
     
-    public void setCustomSoil(CustomSoil customSoil) {
-        this.customSoil = customSoil;
+    @Nullable
+    public CustomCrop getCustomCrop() {
+        return customCrop;
+    }
+    
+    @Nullable
+    public CustomSlope getCustomSlope() {
+        return customSlope;
+    }
+    
+    @Nullable
+    public CustomShade getCustomShade() {
+        return customShade;
     }
     
     public double getAvailableWater() {
         return availableWater;
     }
     
-    public void setAvailableWater(double availableWater) {
-        this.availableWater = availableWater;
+    public double getRootZoneDepth() {
+        return rootZoneDepth;
     }
     
-    public CustomCrop getCustomCrop() {
-        return customCrop;
-    }
-    
-    public void setCustomCrop(CustomCrop customCrop) {
-        this.customCrop = customCrop;
-    }
-    
-    public double getCropCoefficient() {
-        return cropCoefficient;
-    }
-    
-    public void setCropCoefficient(double cropCoefficient) {
-        this.cropCoefficient = cropCoefficient;
-    }
-    
-    public CustomNozzle getCustomNozzle() {
-        return customNozzle;
-    }
-    
-    public void setCustomNozzle(CustomNozzle customNozzle) {
-        this.customNozzle = customNozzle;
-    }
-    
-    public double getInchesPerHour() {
-        return inchesPerHour;
-    }
-    
-    public void setInchesPerHour(double inchesPerHour) {
-        this.inchesPerHour = inchesPerHour;
-    }
-    
-    public CustomSlope getCustomSlope() {
-        return customSlope;
-    }
-    
-    public void setCustomSlope(CustomSlope customSlope) {
-        this.customSlope = customSlope;
-    }
-    
-    public CustomShade getCustomShade() {
-        return customShade;
-    }
-    
-    public void setCustomShade(CustomShade customShade) {
-        this.customShade = customShade;
-    }
-    
-    public double getRootDepth() {
-        return rootDepth;
-    }
-    
-    public void setRootDepth(double rootDepth) {
-        this.rootDepth = rootDepth;
+    public double getManagementAllowedDepletion() {
+        return managementAllowedDepletion;
     }
     
     public double getEfficiency() {
         return efficiency;
     }
     
-    public void setEfficiency(double efficiency) {
-        this.efficiency = efficiency;
+    public double getYardAreaSquareFeet() {
+        return yardAreaSquareFeet;
     }
     
-    public double getAdjustmentLevel1() {
-        return adjustmentLevel1;
+    public double getIrrigationAmount() {
+        return irrigationAmount;
     }
     
-    public void setAdjustmentLevel1(double adjustmentLevel1) {
-        this.adjustmentLevel1 = adjustmentLevel1;
+    public int getMaxRuntime() {
+        return maxRuntime;
     }
     
-    public double getAdjustmentLevel2() {
-        return adjustmentLevel2;
+    public int getRuntime() {
+        return runtime;
     }
     
-    public void setAdjustmentLevel2(double adjustmentLevel2) {
-        this.adjustmentLevel2 = adjustmentLevel2;
-    }
-    
-    public double getAdjustmentLevel3() {
-        return adjustmentLevel3;
-    }
-    
-    public void setAdjustmentLevel3(double adjustmentLevel3) {
-        this.adjustmentLevel3 = adjustmentLevel3;
-    }
-    
-    public double getAdjustmentLevel4() {
-        return adjustmentLevel4;
-    }
-    
-    public void setAdjustmentLevel4(double adjustmentLevel4) {
-        this.adjustmentLevel4 = adjustmentLevel4;
-    }
-    
-    public double getAdjustmentLevel5() {
-        return adjustmentLevel5;
-    }
-    
-    public void setAdjustmentLevel5(double adjustmentLevel5) {
-        this.adjustmentLevel5 = adjustmentLevel5;
+    @Nullable
+    public ZoneRunStatus getZoneRunStatus() {
+        return zoneRunStatus;
     }
     
     public double getArea() {
         return area;
     }
     
-    public void setArea(double area) {
-        this.area = area;
+    @Nullable
+    public String getLastWateredDate() {
+        return lastWateredDate;
     }
     
+    @Nullable
+    public Integer getLastRunDuration() {
+        return lastRunDuration;
+    }
+    
+    @Nullable
+    public Double getTotalWaterUsed() {
+        return totalWaterUsed;
+    }
+    
+    public int[] getWateringAdjustmentRuntimes() {
+        return wateringAdjustmentRuntimes;
+    }
+    
+    @Nullable
     public String getImageUrl() {
         return imageUrl;
     }
     
-    public void setImageUrl(String imageUrl) {
-        this.imageUrl = imageUrl;
+    public double getEtCoefficient() {
+        return etCoefficient;
     }
     
-    public int getSortOrder() {
-        return sortOrder;
+    public double getSaturationThreshold() {
+        return saturationThreshold;
     }
     
-    public void setSortOrder(int sortOrder) {
-        this.sortOrder = sortOrder;
+    public double getDepthOfWater() {
+        return depthOfWater;
     }
     
-    public @Nullable Instant getLastWateredDate() {
-        return lastWateredDate;
+    @Nullable
+    public Integer getFixedRuntime() {
+        return fixedRuntime;
     }
     
-    public void setLastWateredDate(Instant lastWateredDate) {
-        this.lastWateredDate = lastWateredDate;
+    @Nullable
+    public ZoneForecastData getForecastData() {
+        return forecastData;
     }
     
-    public int getLastRunDuration() {
-        return lastRunDuration;
+    // Setters for mutable fields
+    public void setName(String name) {
+        this.name = name;
     }
     
-    public void setLastRunDuration(int lastRunDuration) {
-        this.lastRunDuration = lastRunDuration;
+    public void setEnabled(boolean enabled) {
+        this.enabled = enabled;
     }
     
-    public @Nullable Instant getLastRunStartDate() {
-        return lastRunStartDate;
+    public void setRuntime(int runtime) {
+        this.runtime = runtime;
     }
     
-    public void setLastRunStartDate(Instant lastRunStartDate) {
-        this.lastRunStartDate = lastRunStartDate;
+    public void setZoneRunStatus(@Nullable ZoneRunStatus zoneRunStatus) {
+        this.zoneRunStatus = zoneRunStatus;
     }
     
-    public @Nullable Instant getLastRunEndDate() {
-        return lastRunEndDate;
+    // Professional utility methods
+    public boolean isWatering() {
+        return zoneRunStatus != null && "STARTED".equals(zoneRunStatus.toString());
     }
     
-    public void setLastRunEndDate(Instant lastRunEndDate) {
-        this.lastRunEndDate = lastRunEndDate;
+    public boolean isStopped() {
+        return zoneRunStatus == null || "STOPPED".equals(zoneRunStatus.toString());
     }
     
-    public @Nullable Instant getNextStartDate() {
-        return nextStartDate;
+    public boolean isCompleted() {
+        return zoneRunStatus != null && "COMPLETED".equals(zoneRunStatus.toString());
     }
     
-    public void setNextStartDate(Instant nextStartDate) {
-        this.nextStartDate = nextStartDate;
-    }
-    
-    public List<Object> getScheduleRules() {
-        return scheduleRules;
-    }
-    
-    public void setScheduleRules(List<Object> scheduleRules) {
-        this.scheduleRules = scheduleRules;
-    }
-    
-    public List<Object> getFlexScheduleRules() {
-        return flexScheduleRules;
-    }
-    
-    public void setFlexScheduleRules(List<Object> flexScheduleRules) {
-        this.flexScheduleRules = flexScheduleRules;
-    }
-    
-    public List<WateringEvent> getWateringHistory() {
-        return wateringHistory;
-    }
-    
-    public void setWateringHistory(List<WateringEvent> wateringHistory) {
-        this.wateringHistory = wateringHistory;
-    }
-    
-    public Map<String, Object> getProperties() {
-        return properties;
-    }
-    
-    public void setProperties(Map<String, Object> properties) {
-        this.properties = properties;
-    }
-    
-    // Helper methods
-    public boolean isRunning() {
-        return zoneRunStatus.isActive();
-    }
-    
-    public boolean hasCompleted() {
-        return zoneRunStatus.isCompleted();
-    }
-    
-    public boolean isScheduled() {
-        return zoneRunStatus.isScheduled();
-    }
-    
-    public double getWaterPerWeek() {
-        // Calculate water requirement in inches per week
-        return inchesPerHour * (runtime / 60.0) * 7.0;
-    }
-    
-    public double getWaterVolumePerCycle() {
-        // Calculate water volume in gallons per watering cycle
-        // area (sq ft) * depth (inches) / 12 = cubic feet
-        // cubic feet * 7.48 = gallons
-        double depthInches = inchesPerHour * (runtime / 60.0);
-        return (area * depthInches / 12.0) * 7.48;
-    }
-    
-    public double getSoilMoistureDeficit() {
-        // Calculate soil moisture deficit in inches
-        return rootDepth * availableWater * (1.0 - (cropCoefficient / 100.0));
-    }
-    
-    public double getEffectiveRuntime() {
-        // Calculate effective runtime considering efficiency
-        return runtime * (efficiency / 100.0);
-    }
-    
-    public String getSoilTypeName() {
-        return customSoil != null ? customSoil.getName() : "Unknown";
-    }
-    
-    public String getCropTypeName() {
-        return customCrop != null ? customCrop.getName() : "Unknown";
-    }
-    
-    public String getNozzleTypeName() {
-        return customNozzle != null ? customNozzle.getName() : "Unknown";
-    }
-    
-    public String getSlopeTypeName() {
-        return customSlope != null ? customSlope.getName() : "Unknown";
-    }
-    
-    public String getShadeTypeName() {
-        return customShade != null ? customShade.getName() : "Unknown";
-    }
-    
-    public LocalDateTime getNextStartLocalDateTime(@Nullable ZoneId timeZone) {
-        if (nextStartDate == null) {
-            return null;
+    public String getSoilType() {
+        if (customSoil != null) {
+            String name = customSoil.getName(); // Fixed: Use getter method
+            return name != null ? name : "CUSTOM";
         }
-        ZoneId tz = timeZone != null ? timeZone : ZoneId.systemDefault();
-        return LocalDateTime.ofInstant(nextStartDate, tz);
+        return "UNKNOWN";
     }
     
-    public int getSecondsUntilNextRun(@Nullable ZoneId timeZone) {
-        if (nextStartDate == null) {
-            return -1;
+    public String getCropType() {
+        if (customCrop != null) {
+            String name = customCrop.getName(); // Fixed: Use getter method
+            return name != null ? name : "CUSTOM";
         }
-        Instant now = Instant.now();
-        if (nextStartDate.isBefore(now)) {
-            return 0;
+        return "UNKNOWN";
+    }
+    
+    public String getNozzleType() {
+        if (customNozzle != null) {
+            String name = customNozzle.getName(); // Fixed: Use getter method
+            return name != null ? name : "CUSTOM";
         }
-        return (int) (nextStartDate.getEpochSecond() - now.getEpochSecond());
+        return "UNKNOWN";
+    }
+    
+    public String getSlopeType() {
+        if (customSlope != null) {
+            String name = customSlope.getName(); // Fixed: Use getter method
+            return name != null ? name : "CUSTOM";
+        }
+        return "UNKNOWN";
+    }
+    
+    public String getShadeType() {
+        if (customShade != null) {
+            String name = customShade.getName(); // Fixed: Use getter method
+            return name != null ? name : "CUSTOM";
+        }
+        return "UNKNOWN";
+    }
+    
+    public double getNozzleInchesPerHour() {
+        if (customNozzle != null && customNozzle.inchesPerHour > 0) {
+            return customNozzle.inchesPerHour;
+        }
+        return 0.0;
+    }
+    
+    public double getCropCoefficient() {
+        if (customCrop != null && customCrop.coefficient > 0) {
+            return customCrop.coefficient;
+        }
+        return 1.0;
+    }
+    
+    public double getSoilAvailableWater() {
+        if (customSoil != null && customSoil.availableWater > 0) {
+            return customSoil.availableWater;
+        }
+        return 0.0;
+    }
+    
+    public int getAdjustmentRuntime(int level) {
+        if (level >= 1 && level <= 5 && wateringAdjustmentRuntimes != null && 
+            wateringAdjustmentRuntimes.length >= level) {
+            return wateringAdjustmentRuntimes[level - 1];
+        }
+        return runtime;
+    }
+    
+    public double calculateWaterVolume(double runtimeMinutes) {
+        // Convert runtime minutes to hours
+        double runtimeHours = runtimeMinutes / 60.0;
+        // Calculate water volume in gallons: area (sq ft) * nozzle rate (in/hr) * runtime (hr) / 12
+        double nozzleRate = getNozzleInchesPerHour();
+        return (yardAreaSquareFeet * nozzleRate * runtimeHours) / 12.0;
+    }
+    
+    public double getCurrentWaterVolume() {
+        return calculateWaterVolume(runtime);
+    }
+    
+    public boolean hasProfessionalData() {
+        return customSoil != null || customCrop != null || customNozzle != null || 
+               customSlope != null || customShade != null;
+    }
+    
+    public String getZoneSummary() {
+        return String.format("Zone %d: %s (%s) - %s soil, %s crop, %s nozzle", 
+                zoneNumber, name, enabled ? "Enabled" : "Disabled",
+                getSoilType(), getCropType(), getNozzleType());
+    }
+    
+    public String getProfessionalDataSummary() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Professional Data: ");
+        if (customSoil != null) sb.append("Soil=").append(getSoilType()).append(" ");
+        if (customCrop != null) sb.append("Crop=").append(getCropType()).append(" ");
+        if (customNozzle != null) sb.append("Nozzle=").append(getNozzleType()).append("(")
+          .append(getNozzleInchesPerHour()).append(" in/hr) ");
+        if (customSlope != null) sb.append("Slope=").append(getSlopeType()).append(" ");
+        if (customShade != null) sb.append("Shade=").append(getShadeType()).append(" ");
+        sb.append("Area=").append(area).append(" sq ft");
+        return sb.toString();
     }
     
     @Override
     public String toString() {
-        return String.format("RachioZone[id=%s, name=%s, zoneNumber=%d, enabled=%s, runtime=%d, status=%s]", 
-            id, name, zoneNumber, enabled, runtime, zoneRunStatus);
+        return "RachioZone{id='" + id + "', zoneNumber=" + zoneNumber + ", name='" + name + 
+               "', enabled=" + enabled + ", runtime=" + runtime + 
+               ", status=" + (zoneRunStatus != null ? zoneRunStatus.toString() : "null") + 
+               ", area=" + area + ", soil='" + getSoilType() + 
+               "', crop='" + getCropType() + "', nozzle='" + getNozzleType() + "'}";
     }
     
     /**
-     * Inner class for watering event history
+     * Inner class for zone forecast data
      */
-    public static class WateringEvent {
-        @SerializedName("startDate")
-        private Instant startDate;
+    @NonNullByDefault
+    public static class ZoneForecastData {
+        @SerializedName("et")
+        public double et;
         
-        @SerializedName("endDate")
-        private Instant endDate;
+        @SerializedName("precip")
+        public double precip;
         
-        @SerializedName("duration")
-        private int duration; // in seconds
+        @SerializedName("soilMoisture")
+        public double soilMoisture;
         
-        @SerializedName("waterVolume")
-        private double waterVolume; // in gallons
+        @SerializedName("nextWateringDate")
+        public @Nullable String nextWateringDate;
         
-        @SerializedName("status")
-        private String status;
+        public double getEt() {
+            return et;
+        }
         
-        @SerializedName("weatherAdjusted")
-        private boolean weatherAdjusted;
+        public double getPrecip() {
+            return precip;
+        }
         
-        @SerializedName("forecastId")
-        private String forecastId;
+        public double getSoilMoisture() {
+            return soilMoisture;
+        }
         
-        public Instant getStartDate() { return startDate; }
-        public void setStartDate(Instant startDate) { this.startDate = startDate; }
-        
-        public Instant getEndDate() { return endDate; }
-        public void setEndDate(Instant endDate) { this.endDate = endDate; }
-        
-        public int getDuration() { return duration; }
-        public void setDuration(int duration) { this.duration = duration; }
-        
-        public double getWaterVolume() { return waterVolume; }
-        public void setWaterVolume(double waterVolume) { this.waterVolume = waterVolume; }
-        
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-        
-        public boolean isWeatherAdjusted() { return weatherAdjusted; }
-        public void setWeatherAdjusted(boolean weatherAdjusted) { this.weatherAdjusted = weatherAdjusted; }
-        
-        public String getForecastId() { return forecastId; }
-        public void setForecastId(String forecastId) { this.forecastId = forecastId; }
-        
-        @Override
-        public String toString() {
-            return String.format("WateringEvent[start=%s, duration=%ds, volume=%.2f gal]", 
-                startDate, duration, waterVolume);
+        @Nullable
+        public String getNextWateringDate() {
+            return nextWateringDate;
         }
     }
 }
