@@ -11,67 +11,113 @@ import com.google.gson.annotations.SerializedName;
 public class RachioDevice {
     @SerializedName("id")
     private String id = "";
-    
+
     @SerializedName("name")
     private String name = "";
-    
-    @SerializedName("model")
-    private String model = "";
-    
-    @SerializedName("serialNumber")
-    private String serialNumber = "";
-    
-    @SerializedName("macAddress")
-    private String macAddress = "";
-    
+
     @SerializedName("status")
     private String status = "";
-    
+
+    @SerializedName("serialNumber")
+    private String serialNumber = "";
+
+    @SerializedName("model")
+    private String model = "";
+
     @SerializedName("zones")
+    private List<RachioZone> zones = List.of();
+
+    @SerializedName("on")
+    private boolean on = false;
+
+    @SerializedName("scheduleRules")
     @Nullable
-    private List<RachioZone> zones;
-    
+    private List<Object> scheduleRules;
+
+    @SerializedName("flexScheduleRules")
+    @Nullable
+    private List<Object> flexScheduleRules;
+
     @SerializedName("latitude")
-    private double latitude;
-    
+    private double latitude = 0.0;
+
     @SerializedName("longitude")
-    private double longitude;
-    
-    @SerializedName("elevation")
-    private double elevation;
-    
+    private double longitude = 0.0;
+
     @SerializedName("timeZone")
     private String timeZone = "";
-    
-    @SerializedName("flexScheduleRules")
-    private boolean flexScheduleRules;
-    
-    // Getters
-    public String getId() { return id; }
-    public String getName() { return name; }
-    public String getModel() { return model; }
-    public String getSerialNumber() { return serialNumber; }
-    public String getMacAddress() { return macAddress; }
-    public String getStatus() { return status; }
+
+    @SerializedName("createdAt")
+    private long createdAt = 0;
+
+    @SerializedName("updatedAt")
+    private long updatedAt = 0;
+
+    @SerializedName("scheduleModeType")
     @Nullable
-    public List<RachioZone> getZones() { return zones; }
-    public double getLatitude() { return latitude; }
-    public double getLongitude() { return longitude; }
-    public double getElevation() { return elevation; }
-    public String getTimeZone() { return timeZone; }
-    public boolean isFlexScheduleRules() { return flexScheduleRules; }
-    
-    // Setters
-    public void setId(String id) { this.id = id; }
-    public void setName(String name) { this.name = name; }
-    public void setModel(String model) { this.model = model; }
-    public void setSerialNumber(String serialNumber) { this.serialNumber = serialNumber; }
-    public void setMacAddress(String macAddress) { this.macAddress = macAddress; }
-    public void setStatus(String status) { this.status = status; }
-    public void setZones(@Nullable List<RachioZone> zones) { this.zones = zones; }
-    public void setLatitude(double latitude) { this.latitude = latitude; }
-    public void setLongitude(double longitude) { this.longitude = longitude; }
-    public void setElevation(double elevation) { this.elevation = elevation; }
-    public void setTimeZone(String timeZone) { this.timeZone = timeZone; }
-    public void setFlexScheduleRules(boolean flexScheduleRules) { this.flexScheduleRules = flexScheduleRules; }
+    private String scheduleModeType;
+
+    // Getters
+    public String getId() {
+        return id;
+    }
+
+    public String getName() {
+        return name;
+    }
+
+    public String getStatus() {
+        return status;
+    }
+
+    public String getSerialNumber() {
+        return serialNumber;
+    }
+
+    public String getModel() {
+        return model;
+    }
+
+    public List<RachioZone> getZones() {
+        return zones;
+    }
+
+    public boolean isOn() {
+        return on;
+    }
+
+    @Nullable
+    public List<Object> getScheduleRules() {
+        return scheduleRules;
+    }
+
+    @Nullable
+    public List<Object> getFlexScheduleRules() {
+        return flexScheduleRules;
+    }
+
+    public double getLatitude() {
+        return latitude;
+    }
+
+    public double getLongitude() {
+        return longitude;
+    }
+
+    public String getTimeZone() {
+        return timeZone;
+    }
+
+    public long getCreatedAt() {
+        return createdAt;
+    }
+
+    public long getUpdatedAt() {
+        return updatedAt;
+    }
+
+    @Nullable
+    public String getScheduleModeType() {
+        return scheduleModeType;
+    }
 }
