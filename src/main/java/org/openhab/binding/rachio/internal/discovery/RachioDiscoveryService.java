@@ -1,7 +1,7 @@
 package org.openhab.binding.rachio.internal.discovery;
 
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
@@ -10,363 +10,334 @@ import java.util.concurrent.TimeUnit;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.rachio.internal.RachioBindingConstants;
-import org.openhab.binding.rachio.internal.api.RachioApiException;
+import org.openhab.binding.rachio.internal.api.RachioHttp;
 import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
+import org.openhab.binding.rachio.internal.api.dto.RachioPerson;
 import org.openhab.binding.rachio.internal.api.dto.RachioZone;
+import org.openhab.binding.rachio.internal.config.RachioBridgeConfiguration;
 import org.openhab.binding.rachio.internal.handler.RachioBridgeHandler;
 import org.openhab.core.config.discovery.AbstractDiscoveryService;
 import org.openhab.core.config.discovery.DiscoveryResult;
 import org.openhab.core.config.discovery.DiscoveryResultBuilder;
-import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.ThingUID;
 import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.thing.binding.ThingHandlerService;
-import org.osgi.service.component.annotations.Component;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
  * Discovery service for Rachio devices and zones
  *
- * @author Dave Boyett - Initial contribution
+ * @author Damion Boyett - Enhanced with professional features
  */
-@Component(service = ThingHandlerService.class)
 @NonNullByDefault
 public class RachioDiscoveryService extends AbstractDiscoveryService implements ThingHandlerService {
-
     private final Logger logger = LoggerFactory.getLogger(RachioDiscoveryService.class);
-
+    
     private static final int DISCOVERY_TIMEOUT_SECONDS = 30;
-    private static final int BACKGROUND_DISCOVERY_INTERVAL_SECONDS = 300; // 5 minutes
-
+    private static final int BACKGROUND_DISCOVERY_INTERVAL_MINUTES = 10;
+    
     private @Nullable RachioBridgeHandler bridgeHandler;
     private @Nullable ScheduledFuture<?> backgroundDiscoveryJob;
-    private final Set<String> discoveredDeviceIds = new HashSet<>();
-    private final Set<String> discoveredZoneIds = new HashSet<>();
-
+    
     public RachioDiscoveryService() {
-        super(Set.of(RachioBindingConstants.THING_TYPE_DEVICE, RachioBindingConstants.THING_TYPE_ZONE),
-                DISCOVERY_TIMEOUT_SECONDS, true);
+        super(Set.of(RachioBindingConstants.THING_TYPE_DEVICE, RachioBindingConstants.THING_TYPE_ZONE), 
+              DISCOVERY_TIMEOUT_SECONDS, true);
     }
-
+    
     @Override
     public void setThingHandler(@Nullable ThingHandler handler) {
         if (handler instanceof RachioBridgeHandler) {
             this.bridgeHandler = (RachioBridgeHandler) handler;
         }
     }
-
+    
     @Override
     public @Nullable ThingHandler getThingHandler() {
         return bridgeHandler;
     }
-
+    
     @Override
     public void activate() {
         super.activate(null);
     }
-
+    
     @Override
     public void deactivate() {
-        stopBackgroundDiscovery();
+        cancelBackgroundDiscovery();
         super.deactivate();
     }
-
+    
     @Override
     protected void startScan() {
         logger.debug("Starting Rachio discovery scan");
-        discoverDevices();
-        discoverZones();
+        discoverDevicesAndZones();
     }
-
+    
+    @Override
+    protected void startBackgroundDiscovery() {
+        logger.debug("Starting Rachio background discovery");
+        if (backgroundDiscoveryJob == null || backgroundDiscoveryJob.isCancelled()) {
+            backgroundDiscoveryJob = scheduler.scheduleWithFixedDelay(this::discoverDevicesAndZones, 0,
+                    BACKGROUND_DISCOVERY_INTERVAL_MINUTES, TimeUnit.MINUTES);
+        }
+    }
+    
+    @Override
+    protected void stopBackgroundDiscovery() {
+        logger.debug("Stopping Rachio background discovery");
+        cancelBackgroundDiscovery();
+    }
+    
+    private void cancelBackgroundDiscovery() {
+        if (backgroundDiscoveryJob != null && !backgroundDiscoveryJob.isCancelled()) {
+            backgroundDiscoveryJob.cancel(true);
+            backgroundDiscoveryJob = null;
+        }
+    }
+    
+    private void discoverDevicesAndZones() {
+        RachioBridgeHandler handler = bridgeHandler;
+        if (handler == null) {
+            logger.debug("Bridge handler not available for discovery");
+            return;
+        }
+        
+        RachioHttp http = handler.getHttp();
+        if (http == null) {
+            logger.debug("HTTP client not available for discovery");
+            return;
+        }
+        
+        try {
+            // Get person info to discover all devices
+            RachioPerson person = http.getPersonInfo(); // Fixed: Use getter method
+            if (person != null && person.getDevices() != null) {
+                List<RachioDevice> devices = person.getDevices();
+                for (RachioDevice device : devices) {
+                    discoverDevice(device, handler.getThing().getUID());
+                    
+                    // Discover zones for this device
+                    List<RachioZone> zones = device.getZones(); // Fixed: Use getter method
+                    if (zones != null) {
+                        for (RachioZone zone : zones) {
+                            discoverZone(zone, device, handler.getThing().getUID());
+                        }
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Error during discovery: {}", e.getMessage(), e);
+        }
+    }
+    
+    private void discoverDevice(RachioDevice device, ThingUID bridgeUID) {
+        String deviceId = device.getId(); // Fixed: Use getter method
+        if (deviceId == null || deviceId.isEmpty()) {
+            logger.debug("Device ID is null or empty, skipping discovery");
+            return;
+        }
+        
+        ThingUID thingUID = new ThingUID(RachioBindingConstants.THING_TYPE_DEVICE, bridgeUID, deviceId);
+        
+        // Check if device is already discovered
+        if (getDiscoveryResults().stream().anyMatch(result -> result.getThingUID().equals(thingUID))) {
+            logger.debug("Device {} already discovered", deviceId);
+            return;
+        }
+        
+        Map<String, Object> properties = new HashMap<>();
+        properties.put(RachioBindingConstants.PARAM_DEVICE_ID, deviceId); // Fixed: Use constant
+        
+        String deviceName = device.getName(); // Fixed: Use getter method
+        if (deviceName != null && !deviceName.isEmpty()) {
+            properties.put(RachioBindingConstants.PROPERTY_DEVICE_NAME, deviceName);
+        }
+        
+        String model = device.getModel(); // Fixed: Use getter method
+        if (model != null && !model.isEmpty()) {
+            properties.put(RachioBindingConstants.PROPERTY_DEVICE_MODEL, model);
+        }
+        
+        String serialNumber = device.getSerialNumber(); // Fixed: Use getter method
+        if (serialNumber != null && !serialNumber.isEmpty()) {
+            properties.put(RachioBindingConstants.PROPERTY_DEVICE_SERIAL, serialNumber);
+        }
+        
+        String macAddress = device.getMacAddress();
+        if (macAddress != null && !macAddress.isEmpty()) {
+            properties.put(RachioBindingConstants.PROPERTY_DEVICE_MAC, macAddress);
+        }
+        
+        List<RachioZone> zones = device.getZones(); // Fixed: Use getter method
+        if (zones != null) {
+            properties.put(RachioBindingConstants.PROPERTY_ZONE_COUNT, zones.size());
+        }
+        
+        // Professional properties
+        properties.put(RachioBindingConstants.PROPERTY_LATITUDE, device.getLatitude());
+        properties.put(RachioBindingConstants.PROPERTY_LONGITUDE, device.getLongitude());
+        properties.put(RachioBindingConstants.PROPERTY_ELEVATION, device.getElevation());
+        properties.put(RachioBindingConstants.PROPERTY_TIMEZONE, device.getTimeZone());
+        properties.put(RachioBindingConstants.PROPERTY_FLEX_SCHEDULE, device.isFlexScheduleRules());
+        
+        String label = String.format("Rachio %s: %s", 
+                deviceName != null ? deviceName : "Controller",
+                model != null ? model : "Smart Sprinkler");
+        
+        DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(thingUID)
+                .withBridge(bridgeUID)
+                .withProperties(properties)
+                .withLabel(label)
+                .withRepresentationProperty(RachioBindingConstants.PARAM_DEVICE_ID)
+                .build();
+        
+        thingDiscovered(discoveryResult);
+        logger.debug("Discovered Rachio device: {} ({})", deviceName, deviceId);
+    }
+    
+    private void discoverZone(RachioZone zone, RachioDevice device, ThingUID bridgeUID) {
+        String zoneId = zone.getId(); // Fixed: Use getter method
+        String deviceId = device.getId(); // Fixed: Use getter method
+        
+        if (zoneId == null || zoneId.isEmpty() || deviceId == null || deviceId.isEmpty()) {
+            logger.debug("Zone ID or Device ID is null or empty, skipping discovery");
+            return;
+        }
+        
+        // Create unique zone UID: deviceId_zoneId
+        String uniqueZoneId = String.format("%s_%s", deviceId, zoneId);
+        ThingUID thingUID = new ThingUID(RachioBindingConstants.THING_TYPE_ZONE, bridgeUID, uniqueZoneId);
+        
+        // Check if zone is already discovered
+        if (getDiscoveryResults().stream().anyMatch(result -> result.getThingUID().equals(thingUID))) {
+            logger.debug("Zone {} already discovered", zoneId);
+            return;
+        }
+        
+        Map<String, Object> properties = new HashMap<>();
+        properties.put(RachioBindingConstants.PARAM_ZONE_ID, zoneId);
+        properties.put(RachioBindingConstants.PARAM_DEVICE_ID, deviceId);
+        
+        String zoneName = zone.getName();
+        if (zoneName != null && !zoneName.isEmpty()) {
+            properties.put(RachioBindingConstants.PROPERTY_ZONE_NAME, zoneName);
+        }
+        
+        properties.put(RachioBindingConstants.PROPERTY_ZONE_NUMBER, zone.getZoneNumber());
+        properties.put(RachioBindingConstants.PROPERTY_ZONE_ENABLED, zone.isEnabled());
+        properties.put(RachioBindingConstants.PROPERTY_ZONE_RUNTIME, zone.getRuntime());
+        properties.put(RachioBindingConstants.PROPERTY_ZONE_MAX_RUNTIME, zone.getMaxRuntime());
+        properties.put(RachioBindingConstants.PROPERTY_ZONE_AREA, zone.getArea());
+        
+        // Professional irrigation properties
+        properties.put(RachioBindingConstants.PROPERTY_SOIL_TYPE, zone.getSoilType());
+        properties.put(RachioBindingConstants.PROPERTY_CROP_TYPE, zone.getCropType());
+        properties.put(RachioBindingConstants.PROPERTY_NOZZLE_TYPE, zone.getNozzleType());
+        properties.put(RachioBindingConstants.PROPERTY_SLOPE_TYPE, zone.getSlopeType());
+        properties.put(RachioBindingConstants.PROPERTY_SHADE_TYPE, zone.getShadeType());
+        properties.put(RachioBindingConstants.PROPERTY_ROOT_DEPTH, zone.getRootZoneDepth());
+        properties.put(RachioBindingConstants.PROPERTY_IRRIGATION_EFFICIENCY, zone.getEfficiency());
+        properties.put(RachioBindingConstants.PROPERTY_AVAILABLE_WATER, zone.getAvailableWater());
+        
+        // Water adjustment levels
+        int[] adjustmentRuntimes = zone.getWateringAdjustmentRuntimes();
+        for (int i = 0; i < Math.min(adjustmentRuntimes.length, 5); i++) {
+            properties.put(RachioBindingConstants.PROPERTY_ADJUSTMENT_LEVEL_PREFIX + (i + 1), 
+                          adjustmentRuntimes[i]);
+        }
+        
+        String deviceName = device.getName(); // Fixed: Use getter method
+        String label = String.format("Zone %d: %s (%s)", 
+                zone.getZoneNumber(), 
+                zoneName != null ? zoneName : "Unnamed Zone",
+                deviceName != null ? deviceName : "Controller");
+        
+        DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(thingUID)
+                .withBridge(bridgeUID)
+                .withProperties(properties)
+                .withLabel(label)
+                .withRepresentationProperty(RachioBindingConstants.PARAM_ZONE_ID)
+                .build();
+        
+        thingDiscovered(discoveryResult);
+        logger.debug("Discovered Rachio zone: {} (Device: {}, Zone: {})", zoneName, deviceId, zoneId);
+    }
+    
+    /**
+     * Force rediscovery of all devices and zones
+     */
+    public void rediscoverAll() {
+        logger.debug("Forcing rediscovery of all Rachio devices and zones");
+        removeOlderResults(getTimestampOfLastScan());
+        discoverDevicesAndZones();
+    }
+    
+    /**
+     * Discover a specific device by ID
+     * 
+     * @param deviceId the device ID to discover
+     */
+    public void discoverDeviceById(String deviceId) {
+        RachioBridgeHandler handler = bridgeHandler;
+        if (handler == null || handler.getHttp() == null) {
+            return;
+        }
+        
+        try {
+            // Get person info to find the specific device
+            RachioPerson person = handler.getHttp().getPersonInfo(); // Fixed: Use getter method
+            if (person != null && person.getDevices() != null) {
+                for (RachioDevice device : person.getDevices()) {
+                    if (deviceId.equals(device.getId())) { // Fixed: Use getter method
+                        discoverDevice(device, handler.getThing().getUID());
+                        
+                        // Discover zones for this device
+                        List<RachioZone> zones = device.getZones(); // Fixed: Use getter method
+                        if (zones != null) {
+                            for (RachioZone zone : zones) {
+                                discoverZone(zone, device, handler.getThing().getUID());
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            logger.debug("Error discovering device {}: {}", deviceId, e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * Remove discovery results for a specific device and its zones
+     * 
+     * @param deviceId the device ID to remove
+     */
+    public void removeDeviceDiscovery(String deviceId) {
+        ThingUID bridgeUID = bridgeHandler != null ? bridgeHandler.getThing().getUID() : null;
+        if (bridgeUID == null) {
+            return;
+        }
+        
+        // Remove device discovery
+        ThingUID deviceThingUID = new ThingUID(RachioBindingConstants.THING_TYPE_DEVICE, bridgeUID, deviceId);
+        thingRemoved(deviceThingUID);
+        
+        // Remove all zones for this device
+        getDiscoveryResults().stream()
+            .filter(result -> result.getThingUID().getBridgeUID() != null &&
+                             result.getThingUID().getBridgeUID().equals(bridgeUID))
+            .filter(result -> result.getProperties().containsKey(RachioBindingConstants.PARAM_DEVICE_ID))
+            .filter(result -> deviceId.equals(result.getProperties().get(RachioBindingConstants.PARAM_DEVICE_ID)))
+            .forEach(result -> thingRemoved(result.getThingUID()));
+        
+        logger.debug("Removed discovery results for device: {}", deviceId);
+    }
+    
     @Override
     protected synchronized void stopScan() {
         logger.debug("Stopping Rachio discovery scan");
         super.stopScan();
-    }
-
-    @Override
-    protected void startBackgroundDiscovery() {
-        logger.debug("Starting Rachio background discovery");
-        
-        stopBackgroundDiscovery(); // Ensure no existing job
-        
-        backgroundDiscoveryJob = scheduler.scheduleWithFixedDelay(() -> {
-            try {
-                discoverDevices();
-                discoverZones();
-            } catch (Exception e) {
-                logger.error("Error during background discovery: {}", e.getMessage(), e);
-            }
-        }, 10, BACKGROUND_DISCOVERY_INTERVAL_SECONDS, TimeUnit.SECONDS);
-    }
-
-    @Override
-    protected void stopBackgroundDiscovery() {
-        ScheduledFuture<?> localJob = backgroundDiscoveryJob;
-        if (localJob != null) {
-            localJob.cancel(true);
-            backgroundDiscoveryJob = null;
-        }
-        logger.debug("Stopped Rachio background discovery");
-    }
-
-    /**
-     * Discover Rachio devices
-     */
-    private void discoverDevices() {
-        RachioBridgeHandler localHandler = bridgeHandler;
-        if (localHandler == null) {
-            logger.warn("Bridge handler not available for discovery");
-            return;
-        }
-
-        try {
-            // Get all devices from the bridge
-            var devices = localHandler.getDevices();
-            if (devices == null || devices.isEmpty()) {
-                logger.debug("No devices found during discovery");
-                return;
-            }
-
-            logger.debug("Found {} devices during discovery", devices.size());
-
-            for (RachioDevice device : devices) {
-                if (device.id == null || device.id.isEmpty()) {
-                    logger.debug("Skipping device with null/empty ID");
-                    continue;
-                }
-
-                // Skip if already discovered
-                if (discoveredDeviceIds.contains(device.id)) {
-                    logger.debug("Device {} already discovered, skipping", device.id);
-                    continue;
-                }
-
-                ThingUID bridgeUID = localHandler.getThing().getUID();
-                ThingUID thingUID = new ThingUID(RachioBindingConstants.THING_TYPE_DEVICE, bridgeUID, device.id);
-
-                // Check if thing already exists
-                if (isThingExisting(thingUID)) {
-                    logger.debug("Thing already exists for device {}", device.id);
-                    discoveredDeviceIds.add(device.id);
-                    continue;
-                }
-
-                // Create discovery result
-                Map<String, Object> properties = new HashMap<>();
-                properties.put(RachioBindingConstants.PARAM_DEVICE_ID, device.id);
-                properties.put(RachioBindingConstants.PROPERTY_DEVICE_ID, device.id);
-                
-                if (device.name != null) {
-                    properties.put(RachioBindingConstants.PROPERTY_DEVICE_NAME, device.name);
-                }
-                
-                if (device.model != null) {
-                    properties.put(RachioBindingConstants.PROPERTY_DEVICE_MODEL, device.model);
-                }
-                
-                if (device.serialNumber != null) {
-                    properties.put(RachioBindingConstants.PROPERTY_DEVICE_SERIAL, device.serialNumber);
-                }
-
-                String label = device.name != null ? device.name : "Rachio Device " + device.id;
-                
-                DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(thingUID)
-                        .withBridge(bridgeUID)
-                        .withProperties(properties)
-                        .withLabel(label)
-                        .withRepresentationProperty(RachioBindingConstants.PROPERTY_DEVICE_ID)
-                        .build();
-
-                thingDiscovered(discoveryResult);
-                discoveredDeviceIds.add(device.id);
-                
-                logger.info("Discovered Rachio device: {} (ID: {})", label, device.id);
-                
-                // Discover zones for this device
-                discoverZonesForDevice(device, bridgeUID);
-            }
-
-        } catch (RachioApiException e) {
-            logger.error("Error discovering devices: {}", e.getMessage(), e);
-        } catch (Exception e) {
-            logger.error("Unexpected error during device discovery: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Discover zones for a specific device
-     */
-    private void discoverZonesForDevice(RachioDevice device, ThingUID bridgeUID) {
-        if (device.id == null || device.zones == null || device.zones.isEmpty()) {
-            logger.debug("Device {} has no zones to discover", device.id);
-            return;
-        }
-
-        logger.debug("Found {} zones for device {}", device.zones.size(), device.id);
-
-        for (RachioZone zone : device.zones) {
-            if (zone.id == null || zone.id.isEmpty()) {
-                logger.debug("Skipping zone with null/empty ID");
-                continue;
-            }
-
-            // Skip if already discovered
-            if (discoveredZoneIds.contains(zone.id)) {
-                logger.debug("Zone {} already discovered, skipping", zone.id);
-                continue;
-            }
-
-            // Create zone thing UID (use device ID as part of zone UID to ensure uniqueness)
-            String zoneThingId = device.id + "_" + zone.id;
-            ThingUID zoneUID = new ThingUID(RachioBindingConstants.THING_TYPE_ZONE, bridgeUID, zoneThingId);
-
-            // Check if thing already exists
-            if (isThingExisting(zoneUID)) {
-                logger.debug("Thing already exists for zone {}", zone.id);
-                discoveredZoneIds.add(zone.id);
-                continue;
-            }
-
-            // Create discovery result for zone
-            Map<String, Object> properties = new HashMap<>();
-            properties.put(RachioBindingConstants.PARAM_ZONE_ID, zone.id);
-            properties.put(RachioBindingConstants.PARAM_DEVICE_ID, device.id);
-            properties.put(RachioBindingConstants.PROPERTY_ZONE_ID, zone.id);
-            properties.put(RachioBindingConstants.PROPERTY_DEVICE_ID, device.id);
-            
-            if (zone.name != null) {
-                properties.put(RachioBindingConstants.PROPERTY_ZONE_NAME, zone.name);
-            }
-            
-            if (zone.zoneNumber != null) {
-                properties.put("zoneNumber", zone.zoneNumber);
-            }
-
-            String label = zone.name != null ? zone.name : "Zone " + (zone.zoneNumber != null ? zone.zoneNumber : "?");
-            if (device.name != null) {
-                label += " (" + device.name + ")";
-            }
-
-            DiscoveryResult discoveryResult = DiscoveryResultBuilder.create(zoneUID)
-                    .withBridge(bridgeUID)
-                    .withProperties(properties)
-                    .withLabel(label)
-                    .withRepresentationProperty(RachioBindingConstants.PROPERTY_ZONE_ID)
-                    .build();
-
-            thingDiscovered(discoveryResult);
-            discoveredZoneIds.add(zone.id);
-            
-            logger.info("Discovered Rachio zone: {} (Device: {}, Zone ID: {})", 
-                    zone.name != null ? zone.name : "Unknown", 
-                    device.name != null ? device.name : device.id, 
-                    zone.id);
-        }
-    }
-
-    /**
-     * Discover all zones (for manual discovery)
-     */
-    private void discoverZones() {
-        RachioBridgeHandler localHandler = bridgeHandler;
-        if (localHandler == null) {
-            return;
-        }
-
-        try {
-            var devices = localHandler.getDevices();
-            if (devices == null || devices.isEmpty()) {
-                return;
-            }
-
-            ThingUID bridgeUID = localHandler.getThing().getUID();
-            
-            for (RachioDevice device : devices) {
-                if (device.id != null) {
-                    discoverZonesForDevice(device, bridgeUID);
-                }
-            }
-
-        } catch (RachioApiException e) {
-            logger.error("Error discovering zones: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Check if a thing already exists
-     */
-    private boolean isThingExisting(ThingUID thingUID) {
-        if (bridgeHandler == null) {
-            return false;
-        }
-        
-        // Get the bridge's thing registry (via handler)
-        var bridge = bridgeHandler.getThing();
-        if (bridge == null) {
-            return false;
-        }
-        
-        // In OpenHAB, we would typically use ThingRegistry, but in discovery service
-        // we can check via the bridge handler context
-        // For now, we'll rely on the discovery service's own tracking
-        // A more robust implementation would check the ThingRegistry
-        
-        return false; // Let discovery service manage duplicates
-    }
-
-    /**
-     * Remove thing from discovered cache
-     */
-    public void thingRemoved(ThingUID thingUID) {
-        String thingId = thingUID.getId();
-        
-        // Check if it's a device
-        if (thingId != null && discoveredDeviceIds.contains(thingId)) {
-            discoveredDeviceIds.remove(thingId);
-            logger.debug("Removed device {} from discovery cache", thingId);
-        }
-        
-        // Check if it's a zone (zones have deviceId_zoneId format)
-        for (String zoneId : discoveredZoneIds) {
-            if (thingId != null && thingId.contains(zoneId)) {
-                discoveredZoneIds.remove(zoneId);
-                logger.debug("Removed zone {} from discovery cache", zoneId);
-                break;
-            }
-        }
-    }
-
-    /**
-     * Clear discovery cache
-     */
-    public void clearDiscoveryCache() {
-        discoveredDeviceIds.clear();
-        discoveredZoneIds.clear();
-        logger.debug("Cleared discovery cache");
-    }
-
-    /**
-     * Get discovered device count
-     */
-    public int getDiscoveredDeviceCount() {
-        return discoveredDeviceIds.size();
-    }
-
-    /**
-     * Get discovered zone count
-     */
-    public int getDiscoveredZoneCount() {
-        return discoveredZoneIds.size();
-    }
-
-    /**
-     * Manual discovery trigger (can be called from rules or UI)
-     */
-    public void triggerDiscovery() {
-        logger.info("Manual discovery triggered");
-        startScan();
     }
 }
