@@ -1,65 +1,112 @@
 package org.openhab.binding.rachio.internal.handler;
 
-import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
-import org.openhab.binding.rachio.internal.api.dto.RachioZone;
 import org.eclipse.jdt.annotation.NonNullByDefault;
-import org.openhab.core.thing.ThingStatus;
+import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent;
 
 /**
- * The {@link RachioStatusListener} is notified when a Rachio device or zone status changes.
+ * Interface for listeners that want to receive status updates from Rachio
  *
- * @author Michael Lobstein - Initial contribution
+ * @author Damion Boyett - Initial contribution
  */
-
 @NonNullByDefault
 public interface RachioStatusListener {
-    /**
-     * Called when a refresh of device/zone data is requested
-     */
-    void onRefreshRequested();
     
     /**
-     * Called when the overall device status changes
-     * 
-     * @param status the new thing status
+     * Handle a webhook event from Rachio
+     *
+     * @param event the webhook event
      */
-    void updateDeviceStatus(ThingStatus status);
-
-    /**
-     * Called when a specific zone status changes
-     * 
-     * @param zoneId the ID of the zone that changed
-     * @param status the new thing status
-     */
-    void updateZoneStatus(String zoneId, ThingStatus status);
-
-    /**
-     * Called when thing state changes for a device and zone
-     * 
-     * @param device the device that changed
-     * @param zone the zone that changed (can be null for device-only changes)
-     */
-    void onThingStateChanged(RachioDevice device, RachioZone zone);
+    void handleWebhookEvent(RachioWebhookEvent event);
     
     /**
-     * Called when device data is successfully retrieved and processed
-     * 
-     * @param device the device that was updated
+     * Handle an error that occurred
+     *
+     * @param errorCode the error code
+     * @param errorMessage the error message
      */
-    void onDeviceDataUpdated(RachioDevice device);
+    void onError(String errorCode, String errorMessage); // FIXED: Added missing method
     
     /**
-     * Called when zone data is successfully retrieved and processed
-     * 
-     * @param zone the zone that was updated
+     * Handle a status update
+     *
+     * @param status the status message
+     * @param detail the status detail
      */
-    void onZoneDataUpdated(RachioZone zone);
+    default void onStatusUpdate(String status, @Nullable String detail) {
+        // Default implementation does nothing
+    }
     
     /**
-     * Called when an error occurs during data retrieval or processing
-     * 
-     * @param errorMessage description of the error
-     * @param detail additional error details
+     * Handle device data update
+     *
+     * @param deviceId the device ID
+     * @param dataType the type of data
+     * @param data the data value
      */
-    void onError(String errorMessage, String detail);
+    default void onDeviceDataUpdate(String deviceId, String dataType, Object data) {
+        // Default implementation does nothing
+    }
+    
+    /**
+     * Handle zone data update
+     *
+     * @param zoneId the zone ID
+     * @param dataType the type of data
+     * @param data the data value
+     */
+    default void onZoneDataUpdate(String zoneId, String dataType, Object data) {
+        // Default implementation does nothing
+    }
+    
+    /**
+     * Handle a device status change
+     *
+     * @param deviceId the device ID
+     * @param status the new status
+     */
+    default void onDeviceStatusChange(String deviceId, String status) {
+        // Default implementation does nothing
+    }
+    
+    /**
+     * Handle a zone status change
+     *
+     * @param zoneId the zone ID
+     * @param status the new status
+     */
+    default void onZoneStatusChange(String zoneId, String status) {
+        // Default implementation does nothing
+    }
+    
+    /**
+     * Handle rate limit update
+     *
+     * @param remaining remaining requests
+     * @param limit total limit
+     * @param resetTime reset time
+     */
+    default void onRateLimitUpdate(int remaining, int limit, @Nullable java.time.Instant resetTime) {
+        // Default implementation does nothing
+    }
+    
+    /**
+     * Handle webhook health update
+     *
+     * @param healthy true if webhook is healthy
+     */
+    default void onWebhookHealthUpdate(boolean healthy) {
+        // Default implementation does nothing
+    }
+    
+    /**
+     * Handle cache update
+     *
+     * @param cacheType type of cache
+     * @param size cache size
+     * @param lastUpdate last update time
+     */
+    default void onCacheUpdate(String cacheType, int size, @Nullable java.time.Instant lastUpdate) {
+        // Default implementation does nothing
+    }
 }
