@@ -2,858 +2,663 @@ package org.openhab.binding.rachio.internal.handler;
 
 import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
 
+import java.io.IOException;
+import java.math.BigDecimal;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
+import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.rachio.internal.api.RachioApiException;
 import org.openhab.binding.rachio.internal.api.RachioActions;
 import org.openhab.binding.rachio.internal.api.RachioHttp;
-import org.openhab.binding.rachio.internal.api.RachioImageServletService;
 import org.openhab.binding.rachio.internal.api.RachioWebHookServletService;
 import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
+import org.openhab.binding.rachio.internal.api.dto.RachioEventSummary;
 import org.openhab.binding.rachio.internal.api.dto.RachioPerson;
 import org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent;
 import org.openhab.binding.rachio.internal.api.dto.RachioZone;
 import org.openhab.binding.rachio.internal.config.RachioBridgeConfiguration;
+import org.openhab.binding.rachio.internal.discovery.RachioDiscoveryService;
+import org.openhab.core.config.core.Configuration;
+import org.openhab.core.io.net.http.HttpClientFactory;
+import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.DecimalType;
+import org.openhab.core.library.types.OnOffType;
+import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.StringType;
+import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.binding.BaseBridgeHandler;
-import org.openhab.core.thing.binding.ThingHandler;
+import org.openhab.core.thing.binding.ThingHandlerService;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
+import org.openhab.core.types.State;
+import org.osgi.service.component.annotations.Activate;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Deactivate;
+import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.google.gson.Gson;
+
 /**
- * Bridge handler for Rachio controller with professional features
+ * The {@link RachioBridgeHandler} is responsible for handling commands, which are
+ * sent to one of the channels.
  *
- * @author Damion Boyett - Enhanced with professional monitoring and webhook management
+ * @author Michael Lobstein - Initial contribution
+ * @author Damion Boyett - Enhanced for OpenHAB 5.x
  */
 @NonNullByDefault
+@Component(service = RachioBridgeHandler.class)
 public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActions {
     private final Logger logger = LoggerFactory.getLogger(RachioBridgeHandler.class);
-    
-    private static final int DEFAULT_REFRESH_INTERVAL = 60; // seconds
-    private static final int INITIAL_DELAY = 5; // seconds
-    private static final int WEBHOOK_CHECK_INTERVAL = 300; // seconds
-    
-    private @Nullable RachioBridgeConfiguration config;
-    private @Nullable RachioHttp http;
+
+    private final Gson gson = new Gson();
+    private final HttpClientFactory httpClientFactory;
+    private final Set<RachioStatusListener> statusListeners = Collections.synchronizedSet(new HashSet<>());
+
+    private @Nullable RachioHttp rachioHttp;
     private @Nullable RachioWebHookServletService webhookService;
-    private @Nullable RachioImageServletService imageService;
-    
-    private final Map<String, RachioDeviceHandler> deviceHandlers = new ConcurrentHashMap<>();
-    private final Map<String, RachioZoneHandler> zoneHandlers = new ConcurrentHashMap<>();
-    
-    private @Nullable ScheduledFuture<?> refreshJob;
-    private @Nullable ScheduledFuture<?> webhookCheckJob;
-    
-    private int refreshInterval = DEFAULT_REFRESH_INTERVAL;
-    private boolean webhookEnabled = false;
-    private String lastApiStatus = "";
-    
-    public RachioBridgeHandler(Bridge bridge) {
+    private @Nullable ScheduledFuture<?> pollingJob;
+    private @Nullable ScheduledFuture<?> statusJob;
+    private RachioBridgeConfiguration config = new RachioBridgeConfiguration();
+    private @Nullable RachioPerson person;
+    private Map<String, RachioDevice> devices = new ConcurrentHashMap<>();
+    private long lastPollTime = 0;
+    private long pollInterval = DEFAULT_POLL_INTERVAL_SECONDS;
+    private int adaptivePollingMultiplier = 1;
+    private boolean discoveryEnabled = false;
+
+    @Activate
+    public RachioBridgeHandler(@Reference HttpClientFactory httpClientFactory, Bridge bridge) {
         super(bridge);
+        this.httpClientFactory = httpClientFactory;
     }
-    
+
     @Override
     public void initialize() {
-        logger.debug("Initializing Rachio bridge handler");
-        
+        logger.debug("Initializing Rachio bridge handler.");
         config = getConfigAs(RachioBridgeConfiguration.class);
-        if (config == null || config.apiKey.isEmpty()) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "API key not configured");
+
+        if (config.apiKey.isEmpty()) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
+                    "API Key must be configured for Rachio bridge");
             return;
         }
-        
-        // Initialize HTTP client
-        http = new RachioHttp(config.apiKey, this);
-        
-        // Initialize webhook service if enabled
-        if (config.webhookEnabled) {
-            initializeWebhookService();
+
+        try {
+            // Initialize HTTP client
+            rachioHttp = new RachioHttp(httpClientFactory, config.apiKey, this::handleApiException);
+            
+            // Initialize webhook service
+            webhookService = new RachioWebHookServletService(this, scheduler);
+            
+            // Start polling
+            startPolling();
+            
+            // Start status update job
+            startStatusUpdates();
+            
+            // Update bridge status
+            updateStatus(ThingStatus.ONLINE);
+            
+        } catch (Exception e) {
+            logger.error("Failed to initialize Rachio bridge: {}", e.getMessage(), e);
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
-        
-        // Initialize image service
-        initializeImageService();
-        
-        // Schedule background refresh
-        scheduleRefresh();
-        
-        // Initial device discovery
-        scheduler.schedule(this::discoverDevices, INITIAL_DELAY, TimeUnit.SECONDS);
-        
-        updateStatus(ThingStatus.UNKNOWN, ThingStatusDetail.NONE, "Initializing...");
     }
-    
+
     @Override
     public void dispose() {
-        logger.debug("Disposing Rachio bridge handler");
+        logger.debug("Disposing Rachio bridge handler.");
         
-        // Stop scheduled jobs
-        stopRefresh();
-        stopWebhookCheck();
+        ScheduledFuture<?> localPollingJob = pollingJob;
+        if (localPollingJob != null) {
+            localPollingJob.cancel(true);
+            pollingJob = null;
+        }
         
-        // Deactivate services
-        deactivateWebhookService();
-        deactivateImageService();
+        ScheduledFuture<?> localStatusJob = statusJob;
+        if (localStatusJob != null) {
+            localStatusJob.cancel(true);
+            statusJob = null;
+        }
         
-        // Clear handlers
-        deviceHandlers.clear();
-        zoneHandlers.clear();
+        RachioWebHookServletService localWebhookService = webhookService;
+        if (localWebhookService != null) {
+            localWebhookService.deactivate();
+            webhookService = null;
+        }
+        
+        statusListeners.clear();
+        devices.clear();
         
         super.dispose();
     }
-    
+
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
         if (command instanceof RefreshType) {
             refreshChannel(channelUID);
         } else {
-            logger.debug("Bridge command {} not supported for channel {}", command, channelUID.getId());
-        }
-    }
-    
-    @Override
-    public void childHandlerInitialized(ThingHandler childHandler, Thing childThing) {
-        if (childHandler instanceof RachioDeviceHandler) {
-            RachioDeviceHandler deviceHandler = (RachioDeviceHandler) childHandler;
-            String deviceId = deviceHandler.getDeviceId();
-            if (deviceId != null) {
-                deviceHandlers.put(deviceId, deviceHandler);
-                logger.debug("Registered device handler for device: {}", deviceId);
-            }
-        } else if (childHandler instanceof RachioZoneHandler) {
-            RachioZoneHandler zoneHandler = (RachioZoneHandler) childHandler;
-            String zoneId = zoneHandler.getZoneId();
-            if (zoneId != null) {
-                zoneHandlers.put(zoneId, zoneHandler);
-                logger.debug("Registered zone handler for zone: {}", zoneId);
-            }
-        }
-    }
-    
-    @Override
-    public void childHandlerDisposed(ThingHandler childHandler, Thing childThing) {
-        if (childHandler instanceof RachioDeviceHandler) {
-            RachioDeviceHandler deviceHandler = (RachioDeviceHandler) childHandler;
-            String deviceId = deviceHandler.getDeviceId();
-            if (deviceId != null) {
-                deviceHandlers.remove(deviceId);
-                logger.debug("Unregistered device handler for device: {}", deviceId);
-            }
-        } else if (childHandler instanceof RachioZoneHandler) {
-            RachioZoneHandler zoneHandler = (RachioZoneHandler) childHandler;
-            String zoneId = zoneHandler.getZoneId();
-            if (zoneId != null) {
-                zoneHandlers.remove(zoneId);
-                logger.debug("Unregistered zone handler for zone: {}", zoneId);
-            }
-        }
-    }
-    
-    private void initializeWebhookService() {
-        RachioBridgeConfiguration localConfig = config;
-        if (localConfig == null || http == null) {
-            return;
-        }
-        
-        try {
-            webhookService = new RachioWebHookServletService(this, localConfig.webhookPort, 
-                    localConfig.webhookPath, http, scheduler);
-            
-            // Configure IP filtering if enabled
-            // Fixed: Use localConfig.isIpFilterEnabled() instead of variable
-            if (localConfig.isIpFilterEnabled()) {
-                // Fixed: Use getter methods for configuration
-                String ipFilterList = localConfig.getIpFilterList();
-                boolean useAwsRanges = localConfig.isAwsIpRanges();
-                
-                if (ipFilterList != null && !ipFilterList.isEmpty()) {
-                    webhookService.setAllowedIPs(ipFilterList);
-                }
-                if (useAwsRanges) {
-                    webhookService.enableAwsIpRanges();
-                }
-            }
-            
-            webhookEnabled = true;
-            logger.info("Webhook service initialized on port {} path {}", 
-                       localConfig.webhookPort, localConfig.webhookPath);
-            
-            // Schedule webhook health check
-            scheduleWebhookCheck();
-            
-        } catch (Exception e) {
-            logger.error("Failed to initialize webhook service: {}", e.getMessage(), e);
-            webhookEnabled = false;
-        }
-    }
-    
-    private void deactivateWebhookService() {
-        if (webhookService != null) {
-            try {
-                // Fixed: Call deactivate method on the service
-                webhookService.deactivate();
-                logger.debug("Webhook service deactivated");
-            } catch (Exception e) {
-                logger.debug("Error deactivating webhook service: {}", e.getMessage());
-            }
-            webhookService = null;
-        }
-        webhookEnabled = false;
-    }
-    
-    private void initializeImageService() {
-        RachioBridgeConfiguration localConfig = config;
-        if (localConfig == null) {
-            return;
-        }
-        
-        try {
-            // Fixed: Don't instantiate abstract class - use proper constructor
-            // The RachioImageServletService should not be abstract or should have proper factory
-            // For now, we'll skip initialization if it's abstract
-            logger.warn("Image service initialization skipped - abstract class cannot be instantiated");
-            imageService = null;
-            
-            // Alternative: Create a concrete implementation if needed
-            // imageService = new ConcreteImageServletService(this, localConfig.getImagePort());
-            
-        } catch (Exception e) {
-            logger.error("Failed to initialize image service: {}", e.getMessage(), e);
-        }
-    }
-    
-    private void deactivateImageService() {
-        if (imageService != null) {
-            try {
-                // Fixed: Check if method exists before calling
-                // imageService.deactivate();
-                logger.debug("Image service deactivation skipped");
-            } catch (Exception e) {
-                logger.debug("Error deactivating image service: {}", e.getMessage());
-            }
-            imageService = null;
-        }
-    }
-    
-    private void scheduleRefresh() {
-        RachioBridgeConfiguration localConfig = config;
-        if (localConfig != null && localConfig.refreshInterval > 0) {
-            refreshInterval = localConfig.refreshInterval;
-        }
-        
-        if (refreshJob == null || refreshJob.isCancelled()) {
-            refreshJob = scheduler.scheduleWithFixedDelay(this::refresh, 
-                    INITIAL_DELAY, refreshInterval, TimeUnit.SECONDS);
-            logger.debug("Scheduled refresh every {} seconds", refreshInterval);
-        }
-    }
-    
-    private void stopRefresh() {
-        if (refreshJob != null && !refreshJob.isCancelled()) {
-            refreshJob.cancel(true);
-            refreshJob = null;
-            logger.debug("Stopped refresh job");
-        }
-    }
-    
-    private void scheduleWebhookCheck() {
-        if (webhookCheckJob == null || webhookCheckJob.isCancelled()) {
-            webhookCheckJob = scheduler.scheduleWithFixedDelay(this::checkWebhookHealth, 
-                    WEBHOOK_CHECK_INTERVAL, WEBHOOK_CHECK_INTERVAL, TimeUnit.SECONDS);
-            logger.debug("Scheduled webhook health check every {} seconds", WEBHOOK_CHECK_INTERVAL);
-        }
-    }
-    
-    private void stopWebhookCheck() {
-        if (webhookCheckJob != null && !webhookCheckJob.isCancelled()) {
-            webhookCheckJob.cancel(true);
-            webhookCheckJob = null;
-            logger.debug("Stopped webhook check job");
-        }
-    }
-    
-    private void refresh() {
-        try {
-            RachioHttp localHttp = http;
-            if (localHttp == null) {
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "HTTP client not initialized");
-                return;
-            }
-            
-            // Get person info to verify API connection
-            RachioPerson person = localHttp.getPersonInfo();
-            if (person == null) {
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "No person info received");
-                return;
-            }
-            
-            // Update rate limit status
-            localHttp.updateRateLimitStatus();
-            
-            // Update bridge status
-            updateStatus(ThingStatus.ONLINE);
-            
-            // Update bridge channels
-            updateBridgeChannels(person, localHttp);
-            
-            // Refresh all device handlers
-            refreshDeviceHandlers();
-            
-            // Check webhook health if enabled
-            if (webhookEnabled) {
-                checkWebhookHealth();
-            }
-            
-            logger.debug("Bridge refresh completed successfully");
-            
-        } catch (Exception e) {
-            logger.debug("Error during bridge refresh: {}", e.getMessage(), e);
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
-        }
-    }
-    
-    private void discoverDevices() {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            return;
-        }
-        
-        try {
-            List<RachioDevice> devices = localHttp.getDeviceList();
-            if (devices != null && !devices.isEmpty()) {
-                logger.info("Discovered {} Rachio device(s)", devices.size());
-                
-                // Update device handlers
-                for (RachioDevice device : devices) {
-                    String deviceId = device.getId();
-                    RachioDeviceHandler handler = deviceHandlers.get(deviceId);
-                    if (handler != null) {
-                        handler.updateDevice(device);
+            switch (channelUID.getIdWithoutGroup()) {
+                case CHANNEL_REFRESH:
+                    if (command instanceof OnOffType && command == OnOffType.ON) {
+                        refreshAllData();
+                        updateState(channelUID, OnOffType.OFF);
                     }
-                }
-                
-                updateStatus(ThingStatus.ONLINE);
-            } else {
-                logger.warn("No devices found in Rachio account");
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "No devices found");
+                    break;
+                case CHANNEL_POLL_INTERVAL:
+                    if (command instanceof DecimalType) {
+                        int newInterval = ((DecimalType) command).intValue();
+                        if (newInterval >= MIN_POLL_INTERVAL_SECONDS && newInterval <= MAX_POLL_INTERVAL_SECONDS) {
+                            pollInterval = newInterval;
+                            restartPolling();
+                            updateState(channelUID, new DecimalType(pollInterval));
+                        }
+                    }
+                    break;
             }
+        }
+    }
+
+    private void refreshChannel(ChannelUID channelUID) {
+        switch (channelUID.getIdWithoutGroup()) {
+            case CHANNEL_API_STATUS:
+                updateApiStatus();
+                break;
+            case CHANNEL_RATE_LIMIT_REMAINING:
+                updateRateLimitRemaining();
+                break;
+            case CHANNEL_RATE_LIMIT_PERCENT:
+                updateRateLimitPercent();
+                break;
+            case CHANNEL_RATE_LIMIT_STATUS:
+                updateRateLimitStatus();
+                break;
+            case CHANNEL_RATE_LIMIT_RESET:
+                updateRateLimitReset();
+                break;
+            case CHANNEL_LAST_POLL:
+                updateState(channelUID, new DateTimeType(ZonedDateTime.now()));
+                break;
+        }
+    }
+
+    private void startPolling() {
+        ScheduledFuture<?> localPollingJob = pollingJob;
+        if (localPollingJob != null) {
+            localPollingJob.cancel(true);
+        }
+        
+        pollingJob = scheduler.scheduleWithFixedDelay(this::pollData, 10, pollInterval * adaptivePollingMultiplier, TimeUnit.SECONDS);
+        logger.debug("Started polling with interval {} seconds (multiplier: {})", 
+            pollInterval * adaptivePollingMultiplier, adaptivePollingMultiplier);
+    }
+
+    private void startStatusUpdates() {
+        ScheduledFuture<?> localStatusJob = statusJob;
+        if (localStatusJob != null) {
+            localStatusJob.cancel(true);
+        }
+        
+        statusJob = scheduler.scheduleWithFixedDelay(this::updateStatusChannels, 30, 30, TimeUnit.SECONDS);
+    }
+
+    private void restartPolling() {
+        ScheduledFuture<?> localPollingJob = pollingJob;
+        if (localPollingJob != null) {
+            localPollingJob.cancel(true);
+        }
+        startPolling();
+    }
+
+    private void pollData() {
+        try {
+            logger.debug("Polling Rachio data...");
+            
+            // Update rate limit info first
+            updateRateLimitInfo();
+            
+            // Get person info
+            updatePersonInfo();
+            
+            // Get devices
+            updateDevices();
+            
+            // Update webhook health
+            updateWebhookHealth();
+            
+            // Update status channels
+            updateStatusChannels();
+            
+            lastPollTime = System.currentTimeMillis();
+            updateState(CHANNEL_LAST_POLL, new DateTimeType(ZonedDateTime.now()));
             
         } catch (Exception e) {
-            logger.debug("Error discovering devices: {}", e.getMessage(), e);
+            logger.error("Error during polling: {}", e.getMessage(), e);
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
     }
-    
-    private void refreshDeviceHandlers() {
-        for (RachioDeviceHandler handler : deviceHandlers.values()) {
-            try {
+
+    private void updatePersonInfo() throws RachioApiException, IOException {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            person = localRachioHttp.getPerson();
+            if (person != null) {
+                logger.debug("Found person: {} {}", person.firstName, person.lastName);
+            }
+        }
+    }
+
+    private void updateDevices() throws RachioApiException, IOException {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null && person != null) {
+            List<RachioDevice> deviceList = localRachioHttp.getDevices(person.id);
+            devices.clear();
+            
+            for (RachioDevice device : deviceList) {
+                devices.put(device.id, device);
+                logger.debug("Found device: {} ({})", device.name, device.id);
+                
+                // Notify listeners
+                notifyDeviceUpdated(device);
+                
+                // Update device status
+                updateDeviceStatus(device);
+            }
+            
+            // Update child things
+            updateChildThings();
+        }
+    }
+
+    private void updateDeviceStatus(RachioDevice device) {
+        // Update device status channel if this is the bridge device
+        if (device.id.equals(getThing().getUID().getId())) {
+            updateState(CHANNEL_DEVICE_STATUS, new StringType(device.status));
+            updateState(CHANNEL_DEVICE_ONLINE, device.status.equals("ONLINE") ? OnOffType.ON : OnOffType.OFF);
+        }
+    }
+
+    private void updateChildThings() {
+        getThing().getThings().forEach(thing -> {
+            RachioHandler handler = (RachioHandler) thing.getHandler();
+            if (handler != null) {
                 handler.refresh();
+            }
+        });
+    }
+
+    private void refreshAllData() {
+        logger.debug("Manual refresh requested");
+        scheduler.submit(this::pollData);
+    }
+
+    private void updateRateLimitInfo() {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                // Get rate limit info from HTTP client
+                int remaining = localRachioHttp.getRateLimitRemaining();
+                int limit = localRachioHttp.getRateLimitLimit();
+                long reset = localRachioHttp.getRateLimitReset();
+                
+                // Update adaptive polling
+                updateAdaptivePolling(remaining, limit);
+                
+                // Update channels
+                updateState(CHANNEL_RATE_LIMIT_REMAINING, new DecimalType(remaining));
+                updateState(CHANNEL_RATE_LIMIT_PERCENT, new QuantityType<>(remaining * 100.0 / limit, Units.PERCENT));
+                updateState(CHANNEL_RATE_LIMIT_RESET, new DateTimeType(ZonedDateTime.ofInstant(
+                    java.time.Instant.ofEpochSecond(reset), java.time.ZoneId.systemDefault())));
+                
+                // Update status
+                updateRateLimitStatus();
+                
             } catch (Exception e) {
-                logger.debug("Error refreshing device handler {}: {}", handler.getThing().getUID(), e.getMessage());
+                logger.debug("Failed to update rate limit info: {}", e.getMessage());
             }
         }
     }
-    
-    private void checkWebhookHealth() {
-        RachioWebHookServletService localService = webhookService;
-        if (localService == null) {
-            return;
+
+    private void updateAdaptivePolling(int remaining, int limit) {
+        int oldMultiplier = adaptivePollingMultiplier;
+        
+        if (remaining < limit * 0.1) { // Less than 10% remaining
+            adaptivePollingMultiplier = 3; // Slow down to 3x normal interval
+        } else if (remaining < limit * 0.25) { // Less than 25% remaining
+            adaptivePollingMultiplier = 2; // Slow down to 2x normal interval
+        } else {
+            adaptivePollingMultiplier = 1; // Normal speed
         }
         
-        try {
-            boolean healthy = localService.checkWebhookHealth();
-            if (!healthy) {
-                logger.warn("Webhook health check failed, attempting to re-register");
-                localService.reregisterWebhook();
+        if (adaptivePollingMultiplier != oldMultiplier) {
+            logger.info("Adaptive polling changed from {}x to {}x (remaining: {}/{})", 
+                oldMultiplier, adaptivePollingMultiplier, remaining, limit);
+            restartPolling();
+        }
+    }
+
+    private void updateApiStatus() {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                // Simple API call to check status
+                localRachioHttp.getPerson();
+                updateState(CHANNEL_API_STATUS, new StringType("OK"));
+            } catch (Exception e) {
+                updateState(CHANNEL_API_STATUS, new StringType("ERROR: " + e.getMessage()));
             }
-        } catch (Exception e) {
-            logger.debug("Error checking webhook health: {}", e.getMessage());
         }
     }
-    
-    private void updateBridgeChannels(RachioPerson person, RachioHttp http) {
-        // Update rate limit channels - Fixed: Use ChannelUID and proper State objects
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_RATE_LIMIT_REMAINING), 
-                   new DecimalType(http.getRateLimitRemaining()));
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_RATE_LIMIT_LIMIT), 
-                   new DecimalType(http.getRateLimitLimit()));
-        
-        // Calculate percentage
-        int limit = http.getRateLimitLimit();
-        int remaining = http.getRateLimitRemaining();
-        int percent = (limit > 0) ? (remaining * 100 / limit) : 0;
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_RATE_LIMIT_PERCENT), 
-                   new DecimalType(percent));
-        
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_RATE_LIMIT_STATUS), 
-                   new StringType(http.isRateLimitExceeded() ? "EXCEEDED" : "OK"));
-        
-        // Update person info channels
-        if (person.getFullName() != null) {
-            updateState(new ChannelUID(getThing().getUID(), CHANNEL_PERSON_NAME), 
-                       new StringType(person.getFullName()));
+
+    private void updateRateLimitRemaining() {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                int remaining = localRachioHttp.getRateLimitRemaining();
+                updateState(CHANNEL_RATE_LIMIT_REMAINING, new DecimalType(remaining));
+            } catch (Exception e) {
+                logger.debug("Failed to get rate limit remaining: {}", e.getMessage());
+            }
         }
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_DEVICE_COUNT), 
-                   new DecimalType(person.getDeviceCount()));
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_ZONE_COUNT), 
-                   new DecimalType(person.getTotalZoneCount()));
-        
-        // Update webhook status
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_WEBHOOK_STATUS), 
-                   new StringType(webhookEnabled ? "ACTIVE" : "INACTIVE"));
-        
-        // Update API status
-        lastApiStatus = "OK";
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_API_STATUS), 
-                   new StringType(lastApiStatus));
     }
-    
-    private void refreshChannel(ChannelUID channelUID) {
-        String channelId = channelUID.getId();
-        
-        switch (channelId) {
-            case CHANNEL_RATE_LIMIT_REMAINING:
-            case CHANNEL_RATE_LIMIT_LIMIT:
-            case CHANNEL_RATE_LIMIT_PERCENT:
-            case CHANNEL_RATE_LIMIT_STATUS:
-                RachioHttp localHttp = http;
-                if (localHttp != null) {
-                    localHttp.updateRateLimitStatus();
-                    // Re-update the channel
-                    updateBridgeChannelsFromHttp(localHttp);
+
+    private void updateRateLimitPercent() {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                int remaining = localRachioHttp.getRateLimitRemaining();
+                int limit = localRachioHttp.getRateLimitLimit();
+                updateState(CHANNEL_RATE_LIMIT_PERCENT, new QuantityType<>(remaining * 100.0 / limit, Units.PERCENT));
+            } catch (Exception e) {
+                logger.debug("Failed to get rate limit percent: {}", e.getMessage());
+            }
+        }
+    }
+
+    private void updateRateLimitStatus() {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                int remaining = localRachioHttp.getRateLimitRemaining();
+                int limit = localRachioHttp.getRateLimitLimit();
+                
+                String status;
+                if (remaining == 0) {
+                    status = "LIMIT_EXCEEDED";
+                } else if (remaining < limit * 0.1) {
+                    status = "CRITICAL";
+                } else if (remaining < limit * 0.25) {
+                    status = "WARNING";
+                } else if (remaining < limit * 0.5) {
+                    status = "GOOD";
+                } else {
+                    status = "EXCELLENT";
                 }
-                break;
-            case CHANNEL_WEBHOOK_STATUS:
-                updateState(channelUID, new StringType(webhookEnabled ? "ACTIVE" : "INACTIVE"));
-                break;
-            default:
-                logger.debug("Unhandled refresh for channel: {}", channelId);
-        }
-    }
-    
-    private void updateBridgeChannelsFromHttp(RachioHttp http) {
-        // Update rate limit channels
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_RATE_LIMIT_REMAINING), 
-                   new DecimalType(http.getRateLimitRemaining()));
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_RATE_LIMIT_LIMIT), 
-                   new DecimalType(http.getRateLimitLimit()));
-        
-        int limit = http.getRateLimitLimit();
-        int remaining = http.getRateLimitRemaining();
-        int percent = (limit > 0) ? (remaining * 100 / limit) : 0;
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_RATE_LIMIT_PERCENT), 
-                   new DecimalType(percent));
-        
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_RATE_LIMIT_STATUS), 
-                   new StringType(http.isRateLimitExceeded() ? "EXCEEDED" : "OK"));
-    }
-    
-    // Public API methods for child handlers
-    
-    public @Nullable RachioHttp getHttp() {
-        return http;
-    }
-    
-    public @Nullable RachioDevice getDevice(String deviceId) {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            return null;
-        }
-        
-        try {
-            return localHttp.getDevice(deviceId);
-        } catch (Exception e) {
-            logger.debug("Error getting device {}: {}", deviceId, e.getMessage());
-            return null;
-        }
-    }
-    
-    public @Nullable RachioZone getZone(String zoneId) {
-        // Find which device contains this zone
-        for (RachioDeviceHandler deviceHandler : deviceHandlers.values()) {
-            RachioZone zone = deviceHandler.getZone(zoneId);
-            if (zone != null) {
-                return zone;
+                
+                updateState(CHANNEL_RATE_LIMIT_STATUS, new StringType(status));
+            } catch (Exception e) {
+                logger.debug("Failed to get rate limit status: {}", e.getMessage());
             }
         }
-        return null;
     }
-    
-    public @Nullable String getDeviceIdForZone(String zoneId) {
-        for (RachioDeviceHandler deviceHandler : deviceHandlers.values()) {
-            if (deviceHandler.hasZone(zoneId)) {
-                return deviceHandler.getDeviceId();
+
+    private void updateRateLimitReset() {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                long reset = localRachioHttp.getRateLimitReset();
+                updateState(CHANNEL_RATE_LIMIT_RESET, new DateTimeType(ZonedDateTime.ofInstant(
+                    java.time.Instant.ofEpochSecond(reset), java.time.ZoneId.systemDefault())));
+            } catch (Exception e) {
+                logger.debug("Failed to get rate limit reset: {}", e.getMessage());
             }
         }
-        return null;
     }
-    
-    public Collection<RachioDeviceHandler> getDeviceHandlers() {
-        return Collections.unmodifiableCollection(deviceHandlers.values());
+
+    private void updateStatusChannels() {
+        updateApiStatus();
+        updateRateLimitRemaining();
+        updateRateLimitPercent();
+        updateRateLimitStatus();
+        updateRateLimitReset();
+        updateWebhookHealth();
     }
-    
-    public Collection<RachioZoneHandler> getZoneHandlers() {
-        return Collections.unmodifiableCollection(zoneHandlers.values());
-    }
-    
-    // RachioActions interface implementation
-    
-    @Override
-    public RachioPerson getPersonInfo() throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            throw new org.openhab.binding.rachio.internal.api.RachioApiException("HTTP client not initialized");
-        }
-        return localHttp.getPersonInfo();
-    }
-    
-    @Override
-    public RachioDevice getDevice(String deviceId) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            throw new org.openhab.binding.rachio.internal.api.RachioApiException("HTTP client not initialized");
-        }
-        return localHttp.getDevice(deviceId);
-    }
-    
-    @Override
-    public void startZone(String zoneId, String deviceId, int duration, String source) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            logger.error("HTTP client not initialized");
-            return;
-        }
-        
-        try {
-            localHttp.startZone(zoneId, deviceId, duration, source);
-            
-            // Notify zone handler if available
-            RachioZoneHandler zoneHandler = zoneHandlers.get(zoneId);
-            if (zoneHandler != null) {
-                zoneHandler.onZoneStarted(duration);
-            }
-            
-        } catch (Exception e) {
-            logger.error("Error starting zone {}: {}", zoneId, e.getMessage(), e);
+
+    private void updateWebhookHealth() {
+        RachioWebHookServletService localWebhookService = webhookService;
+        if (localWebhookService != null) {
+            String health = localWebhookService.getHealthStatus();
+            updateState(CHANNEL_WEBHOOK_HEALTH, new StringType(health));
         }
     }
-    
-    @Override
-    public void stopZone(String zoneId, String deviceId, String source) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            logger.error("HTTP client not initialized");
-            return;
-        }
-        
-        try {
-            localHttp.stopZone(zoneId, deviceId, source);
-            
-            // Notify zone handler if available
-            RachioZoneHandler zoneHandler = zoneHandlers.get(zoneId);
-            if (zoneHandler != null) {
-                zoneHandler.onZoneStopped();
-            }
-            
-        } catch (Exception e) {
-            logger.error("Error stopping zone {}: {}", zoneId, e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public void runAllZones(String deviceId, int duration, String source) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            logger.error("HTTP client not initialized");
-            return;
-        }
-        
-        try {
-            localHttp.runAllZones(deviceId, duration, source);
-            
-            // Notify device handler if available
-            RachioDeviceHandler deviceHandler = deviceHandlers.get(deviceId);
-            if (deviceHandler != null) {
-                deviceHandler.onAllZonesStarted(duration);
-            }
-            
-        } catch (Exception e) {
-            logger.error("Error running all zones on device {}: {}", deviceId, e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public void runNextZone(String deviceId, String source) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            logger.error("HTTP client not initialized");
-            return;
-        }
-        
-        try {
-            localHttp.runNextZone(deviceId, source);
-            
-            // Notify device handler if available
-            RachioDeviceHandler deviceHandler = deviceHandlers.get(deviceId);
-            if (deviceHandler != null) {
-                deviceHandler.onNextZoneStarted();
-            }
-            
-        } catch (Exception e) {
-            logger.error("Error running next zone on device {}: {}", deviceId, e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public void stopWatering(String deviceId, String source) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            logger.error("HTTP client not initialized");
-            return;
-        }
-        
-        try {
-            localHttp.stopWatering(deviceId, source);
-            
-            // Notify device handler if available
-            RachioDeviceHandler deviceHandler = deviceHandlers.get(deviceId);
-            if (deviceHandler != null) {
-                deviceHandler.onWateringStopped();
-            }
-            
-            // Notify all zone handlers for this device
-            for (RachioZoneHandler zoneHandler : zoneHandlers.values()) {
-                if (deviceId.equals(zoneHandler.getDeviceId())) {
-                    zoneHandler.onZoneStopped();
-                }
-            }
-            
-        } catch (Exception e) {
-            logger.error("Error stopping watering on device {}: {}", deviceId, e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public void setRainDelay(String deviceId, int duration) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            logger.error("HTTP client not initialized");
-            return;
-        }
-        
-        try {
-            localHttp.setRainDelay(deviceId, duration);
-            
-            // Notify device handler if available
-            RachioDeviceHandler deviceHandler = deviceHandlers.get(deviceId);
-            if (deviceHandler != null) {
-                deviceHandler.onRainDelaySet(duration);
-            }
-            
-        } catch (Exception e) {
-            logger.error("Error setting rain delay on device {}: {}", deviceId, e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public void setZoneEnabled(String zoneId, String deviceId, boolean enabled, String source) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            logger.error("HTTP client not initialized");
-            return;
-        }
-        
-        try {
-            localHttp.setZoneEnabled(zoneId, deviceId, enabled, source);
-            
-            // Notify zone handler if available
-            RachioZoneHandler zoneHandler = zoneHandlers.get(zoneId);
-            if (zoneHandler != null) {
-                zoneHandler.onZoneEnabledChanged(enabled);
-            }
-            
-        } catch (Exception e) {
-            logger.error("Error {} zone {}: {}", enabled ? "enabling" : "disabling", 
-                       zoneId, e.getMessage(), e);
-        }
-    }
-    
-    @Override
-    public org.openhab.binding.rachio.internal.api.dto.RachioForecast getDeviceForecast(String deviceId) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            throw new org.openhab.binding.rachio.internal.api.RachioApiException("HTTP client not initialized");
-        }
-        return localHttp.getDeviceForecast(deviceId);
-    }
-    
-    @Override
-    public org.openhab.binding.rachio.internal.api.dto.RachioUsage getDeviceUsage(String deviceId) throws org.openhab.binding.rachio.internal.api.RachioApiException {
-        RachioHttp localHttp = http;
-        if (localHttp == null) {
-            throw new org.openhab.binding.rachio.internal.api.RachioApiException("HTTP client not initialized");
-        }
-        return localHttp.getDeviceUsage(deviceId);
-    }
-    
-    @Override
-    public void updateRateLimitStatus() {
-        RachioHttp localHttp = http;
-        if (localHttp != null) {
-            localHttp.updateRateLimitStatus();
-        }
-    }
-    
-    @Override
-    public Map<String, Object> getRateLimitInfo() {
-        RachioHttp localHttp = http;
-        if (localHttp != null) {
-            Map<String, Object> rateLimitInfo = new HashMap<>();
-            rateLimitInfo.put("remaining", localHttp.getRateLimitRemaining());
-            rateLimitInfo.put("limit", localHttp.getRateLimitLimit());
-            rateLimitInfo.put("reset", localHttp.getRateLimitReset());
-            rateLimitInfo.put("exceeded", localHttp.isRateLimitExceeded());
-            rateLimitInfo.put("resetSeconds", localHttp.getRateLimitResetSeconds());
-            return rateLimitInfo;
-        }
-        return Collections.emptyMap();
-    }
-    
-    @Override
-    public void clearRateLimitExceeded() {
-        RachioHttp localHttp = http;
-        if (localHttp != null) {
-            localHttp.clearRateLimitExceeded();
-        }
-    }
-    
-    @Override
-    public boolean shouldThrottle() {
-        RachioHttp localHttp = http;
-        return localHttp != null && localHttp.shouldThrottle();
-    }
-    
-    @Override
-    public long getThrottleDelayMs() {
-        RachioHttp localHttp = http;
-        return localHttp != null ? localHttp.getThrottleDelayMs() : 0;
-    }
-    
-    @Override
-    public boolean validateWebhookSignature(@Nullable String signature, @Nullable String payload, @Nullable String secret) {
-        // Implement webhook signature validation
-        if (signature == null || payload == null || secret == null) {
-            return false;
-        }
-        
-        try {
-            // Use RachioSecurity class for validation
-            // This is a simplified implementation
-            return true; // For now, return true - actual implementation would validate HMAC
-        } catch (Exception e) {
-            logger.debug("Error validating webhook signature: {}", e.getMessage());
-            return false;
-        }
-    }
-    
-    // Webhook event handling
-    
+
     public void handleWebhookEvent(RachioWebhookEvent event) {
-        if (event == null) {
-            return;
+        logger.debug("Received webhook event: {} for device {}", event.type, event.deviceId);
+        
+        // Update device status if this is a status event
+        if ("DEVICE_STATUS".equals(event.type) && event.deviceId != null) {
+            updateState(CHANNEL_DEVICE_STATUS, new StringType(event.subType));
+            updateState(CHANNEL_DEVICE_ONLINE, "ONLINE".equals(event.subType) ? OnOffType.ON : OnOffType.OFF);
         }
         
-        String deviceId = event.getDeviceId();
-        String eventType = event.getType();
-        
-        logger.info("Processing webhook event: {} for device: {}", eventType, deviceId);
-        
-        // Update device handler if available
-        if (deviceId != null) {
-            RachioDeviceHandler deviceHandler = deviceHandlers.get(deviceId);
-            if (deviceHandler != null) {
-                deviceHandler.handleWebhookEvent(event);
+        // Notify listeners
+        synchronized (statusListeners) {
+            for (RachioStatusListener listener : statusListeners) {
+                try {
+                    listener.onStatusChanged(event);
+                } catch (Exception e) {
+                    logger.warn("Error notifying listener: {}", e.getMessage());
+                }
             }
         }
         
-        // Update all status listeners
-        for (RachioStatusListener listener : getStatusListeners()) {
-            listener.onStatusChanged(event);
+        // Trigger refresh if needed
+        if (shouldRefreshOnEvent(event)) {
+            scheduler.submit(this::refreshDeviceData);
         }
-        
-        // Update bridge channels if needed
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_WEBHOOK_LAST_EVENT), 
-                   new StringType(eventType));
-        updateState(new ChannelUID(getThing().getUID(), CHANNEL_WEBHOOK_LAST_TIME), 
-                   new StringType(java.time.Instant.now().toString()));
     }
-    
-    // Status update for bridge (called by RachioHttp)
-    
-    public void updateBridgeStatus(ThingStatus status, ThingStatusDetail detail, String description) {
-        updateStatus(status, detail, description);
+
+    private boolean shouldRefreshOnEvent(RachioWebhookEvent event) {
+        return "ZONE_STATUS".equals(event.type) || 
+               "DEVICE_STATUS".equals(event.type) ||
+               "SCHEDULE_STATUS".equals(event.type);
     }
-    
-    public void updateBridgeStatus(ThingStatus status) {
-        updateStatus(status);
+
+    private void refreshDeviceData() {
+        try {
+            updateDevices();
+        } catch (Exception e) {
+            logger.debug("Failed to refresh device data after webhook: {}", e.getMessage());
+        }
     }
-    
-    // Utility methods
-    
-    public boolean isWebhookEnabled() {
-        return webhookEnabled;
+
+    private void handleApiException(Exception e) {
+        if (e instanceof RachioApiException) {
+            RachioApiException apiEx = (RachioApiException) e;
+            if (apiEx.getStatusCode() == 429) { // Rate limit exceeded
+                logger.warn("API rate limit exceeded, slowing down polling");
+                adaptivePollingMultiplier = Math.min(adaptivePollingMultiplier * 2, 10); // Max 10x slowdown
+                restartPolling();
+                updateStatus(ThingStatus.ONLINE, ThingStatusDetail.NONE, "Rate limit exceeded, slowing down");
+            } else if (apiEx.getStatusCode() >= 500) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "API server error");
+            } else if (apiEx.getStatusCode() == 401) {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Invalid API key");
+            }
+        } else {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
+        }
     }
-    
+
+    public void addStatusListener(RachioStatusListener listener) {
+        statusListeners.add(listener);
+    }
+
+    public void removeStatusListener(RachioStatusListener listener) {
+        statusListeners.remove(listener);
+    }
+
+    public @Nullable RachioDevice getDevice(String deviceId) {
+        return devices.get(deviceId);
+    }
+
+    public @Nullable RachioZone getZone(String deviceId, String zoneId) {
+        RachioDevice device = devices.get(deviceId);
+        if (device != null && device.zones != null) {
+            for (RachioZone zone : device.zones) {
+                if (zone.id.equals(zoneId)) {
+                    return zone;
+                }
+            }
+        }
+        return null;
+    }
+
+    public List<RachioDevice> getDevices() {
+        return new ArrayList<>(devices.values());
+    }
+
+    public @Nullable RachioHttp getRachioHttp() {
+        return rachioHttp;
+    }
+
     public @Nullable RachioWebHookServletService getWebhookService() {
         return webhookService;
     }
-    
-    public @Nullable RachioImageServletService getImageService() {
-        return imageService;
+
+    public boolean isDiscoveryEnabled() {
+        return discoveryEnabled;
     }
-    
-    public void setRefreshInterval(int interval) {
-        if (interval > 0 && interval != refreshInterval) {
-            refreshInterval = interval;
-            stopRefresh();
-            scheduleRefresh();
-            logger.info("Refresh interval changed to {} seconds", interval);
+
+    public void setDiscoveryEnabled(boolean enabled) {
+        this.discoveryEnabled = enabled;
+    }
+
+    @Override
+    public Collection<Class<? extends ThingHandlerService>> getServices() {
+        return Set.of(RachioDiscoveryService.class);
+    }
+
+    // Implementation of RachioActions interface methods
+    @Override
+    public int getAdaptivePollingMultiplier() {
+        return adaptivePollingMultiplier;
+    }
+
+    @Override
+    public void startZone(String deviceId, String zoneId, int duration, String source) throws RachioApiException {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                localRachioHttp.startZone(deviceId, zoneId, duration, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to start zone: " + e.getMessage(), e);
+            }
+        } else {
+            throw new RachioApiException("Rachio HTTP client not initialized");
         }
     }
-    
-    public void enableWebhook(boolean enable) {
-        if (enable != webhookEnabled) {
-            if (enable) {
-                initializeWebhookService();
-            } else {
-                deactivateWebhookService();
+
+    @Override
+    public void stopWatering(String deviceId, String source) throws RachioApiException {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                localRachioHttp.stopWatering(deviceId, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to stop watering: " + e.getMessage(), e);
+            }
+        } else {
+            throw new RachioApiException("Rachio HTTP client not initialized");
+        }
+    }
+
+    @Override
+    public void runAllZones(String deviceId, int duration, String source) throws RachioApiException {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                localRachioHttp.runAllZones(deviceId, duration, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to run all zones: " + e.getMessage(), e);
+            }
+        } else {
+            throw new RachioApiException("Rachio HTTP client not initialized");
+        }
+    }
+
+    @Override
+    public void setZoneEnabled(String deviceId, String zoneId, boolean enabled, String source) throws RachioApiException {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                localRachioHttp.setZoneEnabled(deviceId, zoneId, enabled, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to set zone enabled: " + e.getMessage(), e);
+            }
+        } else {
+            throw new RachioApiException("Rachio HTTP client not initialized");
+        }
+    }
+
+    @Override
+    public void rainDelay(String deviceId, int duration) throws RachioApiException {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                localRachioHttp.rainDelay(deviceId, duration);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to set rain delay: " + e.getMessage(), e);
+            }
+        } else {
+            throw new RachioApiException("Rachio HTTP client not initialized");
+        }
+    }
+
+    @Override
+    public void runNextZone(String deviceId, String source) throws RachioApiException {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            try {
+                localRachioHttp.runNextZone(deviceId, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to run next zone: " + e.getMessage(), e);
+            }
+        } else {
+            throw new RachioApiException("Rachio HTTP client not initialized");
+        }
+    }
+
+    private void notifyDeviceUpdated(RachioDevice device) {
+        synchronized (statusListeners) {
+            for (RachioStatusListener listener : statusListeners) {
+                try {
+                    listener.onDeviceUpdated(device);
+                } catch (Exception e) {
+                    logger.warn("Error notifying device update listener: {}", e.getMessage());
+                }
             }
         }
-    }
-    
-    private List<RachioStatusListener> getStatusListeners() {
-        // Return list of registered status listeners
-        // This would be implemented based on your listener registration system
-        return Collections.emptyList();
-    }
-    
-    // Method to get RachioHttp for handlers
-    public @Nullable RachioHttp getRachioHttp() {
-        return http;
     }
 }
