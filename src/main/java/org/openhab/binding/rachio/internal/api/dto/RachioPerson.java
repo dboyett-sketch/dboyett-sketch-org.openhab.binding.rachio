@@ -11,42 +11,46 @@ import com.google.gson.annotations.SerializedName;
 public class RachioPerson {
     @SerializedName("id")
     private String id = "";
-    
-    @SerializedName("username")
-    private String username = "";
-    
-    @SerializedName("fullName")
-    private String fullName = "";
-    
+
     @SerializedName("firstName")
     private String firstName = "";
-    
+
     @SerializedName("lastName")
     private String lastName = "";
-    
+
     @SerializedName("email")
     private String email = "";
-    
+
     @SerializedName("devices")
+    private List<RachioDevice> devices = List.of();
+
+    @SerializedName("username")
     @Nullable
-    private List<RachioDevice> devices;
-    
+    private String username;
+
     // Getters
-    public String getId() { return id; }
-    public String getUsername() { return username; }
-    public String getFullName() { return fullName; }
-    public String getFirstName() { return firstName; }
-    public String getLastName() { return lastName; }
-    public String getEmail() { return email; }
+    public String getId() {
+        return id;
+    }
+
+    public String getFirstName() {
+        return firstName;
+    }
+
+    public String getLastName() {
+        return lastName;
+    }
+
+    public String getEmail() {
+        return email;
+    }
+
+    public List<RachioDevice> getDevices() {
+        return devices;
+    }
+
     @Nullable
-    public List<RachioDevice> getDevices() { return devices; }
-    
-    // Setters
-    public void setId(String id) { this.id = id; }
-    public void setUsername(String username) { this.username = username; }
-    public void setFullName(String fullName) { this.fullName = fullName; }
-    public void setFirstName(String firstName) { this.firstName = firstName; }
-    public void setLastName(String lastName) { this.lastName = lastName; }
-    public void setEmail(String email) { this.email = email; }
-    public void setDevices(@Nullable List<RachioDevice> devices) { this.devices = devices; }
+    public String getUsername() {
+        return username;
+    }
 }
