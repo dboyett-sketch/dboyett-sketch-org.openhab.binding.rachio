@@ -27,10 +27,13 @@ import org.osgi.service.component.annotations.ConfigurationPolicy;
 public class RachioHandlerFactory extends BaseThingHandlerFactory {
     
     private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Set.of(
-        RachioBindingConstants.THING_TYPE_BRIDGE,
-        RachioBindingConstants.THING_TYPE_DEVICE,
-        RachioBindingConstants.THING_TYPE_ZONE
+            RachioBindingConstants.THING_TYPE_BRIDGE,
+            RachioBindingConstants.THING_TYPE_DEVICE,
+            RachioBindingConstants.THING_TYPE_ZONE
     );
+    
+    // Note: Removed deprecated BRIDGE_TYPE, DEVICE_TYPE, ZONE_TYPE constants
+    // Using the standard constants from RachioBindingConstants instead
     
     @Override
     public boolean supportsThingType(ThingTypeUID thingTypeUID) {
@@ -50,83 +53,5 @@ public class RachioHandlerFactory extends BaseThingHandlerFactory {
         }
         
         return null;
-    }
-    
-    // FIXED: Removed the incorrect @Override annotation from these methods
-    // They were trying to override methods that don't exist in the parent class
-    
-    public Set<ThingTypeUID> getSupportedThingTypes() {
-        return SUPPORTED_THING_TYPES_UIDS;
-    }
-    
-    public boolean isBridge(ThingTypeUID thingTypeUID) {
-        return RachioBindingConstants.THING_TYPE_BRIDGE.equals(thingTypeUID);
-    }
-    
-    public boolean isDevice(ThingTypeUID thingTypeUID) {
-        return RachioBindingConstants.THING_TYPE_DEVICE.equals(thingTypeUID);
-    }
-    
-    public boolean isZone(ThingTypeUID thingTypeUID) {
-        return RachioBindingConstants.THING_TYPE_ZONE.equals(thingTypeUID);
-    }
-    
-    public String getThingTypeLabel(ThingTypeUID thingTypeUID) {
-        if (RachioBindingConstants.THING_TYPE_BRIDGE.equals(thingTypeUID)) {
-            return "Rachio Bridge";
-        } else if (RachioBindingConstants.THING_TYPE_DEVICE.equals(thingTypeUID)) {
-            return "Rachio Device";
-        } else if (RachioBindingConstants.THING_TYPE_ZONE.equals(thingTypeUID)) {
-            return "Rachio Zone";
-        }
-        return "Unknown";
-    }
-    
-    public String getThingTypeDescription(ThingTypeUID thingTypeUID) {
-        if (RachioBindingConstants.THING_TYPE_BRIDGE.equals(thingTypeUID)) {
-            return "Represents a connection to the Rachio cloud service";
-        } else if (RachioBindingConstants.THING_TYPE_DEVICE.equals(thingTypeUID)) {
-            return "Represents a Rachio irrigation controller";
-        } else if (RachioBindingConstants.THING_TYPE_ZONE.equals(thingTypeUID)) {
-            return "Represents an individual irrigation zone";
-        }
-        return "";
-    }
-    
-    // Helper methods for thing type strings (used in the original code)
-    public String getBridgeTypeString() {
-        return RachioBindingConstants.BRIDGE_TYPE;
-    }
-    
-    public String getDeviceTypeString() {
-        return RachioBindingConstants.DEVICE_TYPE;
-    }
-    
-    public String getZoneTypeString() {
-        return RachioBindingConstants.ZONE_TYPE;
-    }
-    
-    // Factory methods for testing
-    public RachioBridgeHandler createBridgeHandler(Bridge bridge) {
-        return new RachioBridgeHandler(bridge);
-    }
-    
-    public RachioDeviceHandler createDeviceHandler(Thing thing) {
-        return new RachioDeviceHandler(thing);
-    }
-    
-    public RachioZoneHandler createZoneHandler(Thing thing) {
-        return new RachioZoneHandler(thing);
-    }
-    
-    // Compatibility methods
-    public static RachioHandlerFactory getInstance() {
-        // Note: This is not the standard OSGi way, but provided for compatibility
-        return new RachioHandlerFactory();
-    }
-    
-    @Override
-    public String toString() {
-        return "RachioHandlerFactory[supportedTypes=" + SUPPORTED_THING_TYPES_UIDS.size() + "]";
     }
 }
