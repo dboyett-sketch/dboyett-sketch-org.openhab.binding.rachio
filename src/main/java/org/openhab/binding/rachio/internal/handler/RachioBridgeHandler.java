@@ -92,7 +92,12 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
 
         try {
             // Initialize HTTP client
-            rachioHttp = new RachioHttp(config.apiKey, this::handleApiException);
+            rachioHttp = new RachioHttp(config.apiKey, new RachioHttp.ApiExceptionHandler() {
+                @Override
+                public void handle(Exception e) {
+                    handleApiException(e);
+                }
+            });
             
             // Start polling
             startPolling();
@@ -528,10 +533,23 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
     }
 
     @Override
+    public @Nullable RachioPerson getPerson() throws RachioApiException, IOException {
+        RachioHttp localRachioHttp = rachioHttp;
+        if (localRachioHttp != null) {
+            return localRachioHttp.getPerson();
+        }
+        return null;
+    }
+
+    @Override
     public void startZone(String deviceId, String zoneId, int duration, String source) throws RachioApiException {
         RachioHttp localRachioHttp = rachioHttp;
         if (localRachioHttp != null) {
-            localRachioHttp.startZone(deviceId, zoneId, duration, source);
+            try {
+                localRachioHttp.startZone(deviceId, zoneId, duration, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to start zone: " + e.getMessage(), e);
+            }
         } else {
             throw new RachioApiException("Rachio HTTP client not initialized");
         }
@@ -541,7 +559,11 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
     public void stopWatering(String deviceId, String source) throws RachioApiException {
         RachioHttp localRachioHttp = rachioHttp;
         if (localRachioHttp != null) {
-            localRachioHttp.stopWatering(deviceId, source);
+            try {
+                localRachioHttp.stopWatering(deviceId, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to stop watering: " + e.getMessage(), e);
+            }
         } else {
             throw new RachioApiException("Rachio HTTP client not initialized");
         }
@@ -551,7 +573,11 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
     public void runAllZones(String deviceId, int duration, String source) throws RachioApiException {
         RachioHttp localRachioHttp = rachioHttp;
         if (localRachioHttp != null) {
-            localRachioHttp.runAllZones(deviceId, duration, source);
+            try {
+                localRachioHttp.runAllZones(deviceId, duration, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to run all zones: " + e.getMessage(), e);
+            }
         } else {
             throw new RachioApiException("Rachio HTTP client not initialized");
         }
@@ -561,7 +587,11 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
     public void setZoneEnabled(String deviceId, String zoneId, boolean enabled, String source) throws RachioApiException {
         RachioHttp localRachioHttp = rachioHttp;
         if (localRachioHttp != null) {
-            localRachioHttp.setZoneEnabled(deviceId, zoneId, enabled, source);
+            try {
+                localRachioHttp.setZoneEnabled(deviceId, zoneId, enabled, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to set zone enabled: " + e.getMessage(), e);
+            }
         } else {
             throw new RachioApiException("Rachio HTTP client not initialized");
         }
@@ -571,7 +601,11 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
     public void rainDelay(String deviceId, int duration) throws RachioApiException {
         RachioHttp localRachioHttp = rachioHttp;
         if (localRachioHttp != null) {
-            localRachioHttp.rainDelay(deviceId, duration);
+            try {
+                localRachioHttp.rainDelay(deviceId, duration);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to set rain delay: " + e.getMessage(), e);
+            }
         } else {
             throw new RachioApiException("Rachio HTTP client not initialized");
         }
@@ -581,7 +615,11 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
     public void runNextZone(String deviceId, String source) throws RachioApiException {
         RachioHttp localRachioHttp = rachioHttp;
         if (localRachioHttp != null) {
-            localRachioHttp.runNextZone(deviceId, source);
+            try {
+                localRachioHttp.runNextZone(deviceId, source);
+            } catch (IOException e) {
+                throw new RachioApiException("Failed to run next zone: " + e.getMessage(), e);
+            }
         } else {
             throw new RachioApiException("Rachio HTTP client not initialized");
         }
@@ -590,7 +628,12 @@ public class RachioBridgeHandler extends BaseBridgeHandler implements RachioActi
     @Override
     public boolean validateWebhookSignature(String payload, String signature, String webhookKey) {
         // Simple validation - you can implement HMAC validation here
-        return true; // For now, return true
+        return true;
+    }
+
+    // Helper method for device handlers
+    public void setRainDelay(String deviceId, int duration) throws RachioApiException {
+        rainDelay(deviceId, duration);
     }
 
     private void notifyDeviceUpdated(RachioDevice device) {
