@@ -1,112 +1,46 @@
 package org.openhab.binding.rachio.internal.handler;
 
+import java.time.Instant;
+
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.api.dto.RachioWebhookEvent;
+import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
+import org.openhab.binding.rachio.internal.api.dto.RachioWebHookEvent;
 
 /**
- * Interface for listeners that want to receive status updates from Rachio
- *
+ * Interface for listening to status changes from Rachio devices
+ * 
  * @author Damion Boyett - Initial contribution
  */
 @NonNullByDefault
 public interface RachioStatusListener {
     
     /**
-     * Handle a webhook event from Rachio
-     *
+     * Called when a device status changes via webhook event
+     * 
      * @param event the webhook event
      */
-    void handleWebhookEvent(RachioWebhookEvent event);
+    void onStatusChanged(RachioWebHookEvent event);
     
     /**
-     * Handle an error that occurred
-     *
-     * @param errorCode the error code
-     * @param errorMessage the error message
+     * Called when a device is updated (refreshed from API)
+     * 
+     * @param device the updated device
      */
-    void onError(String errorCode, String errorMessage); // FIXED: Added missing method
+    void onDeviceUpdated(RachioDevice device);
     
     /**
-     * Handle a status update
-     *
-     * @param status the status message
-     * @param detail the status detail
+     * Get the device ID that this listener is interested in
+     * 
+     * @return the device ID, or empty string for all devices
      */
-    default void onStatusUpdate(String status, @Nullable String detail) {
-        // Default implementation does nothing
-    }
+    String getDeviceId();
     
     /**
-     * Handle device data update
-     *
-     * @param deviceId the device ID
-     * @param dataType the type of data
-     * @param data the data value
+     * Get the last event time for this listener
+     * 
+     * @return the last event time, or null if no events received
      */
-    default void onDeviceDataUpdate(String deviceId, String dataType, Object data) {
-        // Default implementation does nothing
-    }
-    
-    /**
-     * Handle zone data update
-     *
-     * @param zoneId the zone ID
-     * @param dataType the type of data
-     * @param data the data value
-     */
-    default void onZoneDataUpdate(String zoneId, String dataType, Object data) {
-        // Default implementation does nothing
-    }
-    
-    /**
-     * Handle a device status change
-     *
-     * @param deviceId the device ID
-     * @param status the new status
-     */
-    default void onDeviceStatusChange(String deviceId, String status) {
-        // Default implementation does nothing
-    }
-    
-    /**
-     * Handle a zone status change
-     *
-     * @param zoneId the zone ID
-     * @param status the new status
-     */
-    default void onZoneStatusChange(String zoneId, String status) {
-        // Default implementation does nothing
-    }
-    
-    /**
-     * Handle rate limit update
-     *
-     * @param remaining remaining requests
-     * @param limit total limit
-     * @param resetTime reset time
-     */
-    default void onRateLimitUpdate(int remaining, int limit, @Nullable java.time.Instant resetTime) {
-        // Default implementation does nothing
-    }
-    
-    /**
-     * Handle webhook health update
-     *
-     * @param healthy true if webhook is healthy
-     */
-    default void onWebhookHealthUpdate(boolean healthy) {
-        // Default implementation does nothing
-    }
-    
-    /**
-     * Handle cache update
-     *
-     * @param cacheType type of cache
-     * @param size cache size
-     * @param lastUpdate last update time
-     */
-    default void onCacheUpdate(String cacheType, int size, @Nullable java.time.Instant lastUpdate) {
-        // Default implementation does nothing
-    }
+    @Nullable
+    Instant getLastEventTime();
 }
