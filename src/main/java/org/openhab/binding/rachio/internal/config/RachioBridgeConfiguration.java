@@ -4,30 +4,54 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
 /**
- * Configuration for Rachio bridge
+ * The {@link RachioBridgeConfiguration} class contains fields mapping thing configuration parameters.
  *
- * @author Damion Boyett - Initial contribution
+ * @author David Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioBridgeConfiguration {
-    public @Nullable String accessToken;
-    public @Nullable String secretKey;
-    public @Nullable String deviceId;
-    public @Nullable String webhookUrl;
-    public @Nullable Boolean webhookEnabled;
-    public @Nullable Integer webhookCheckInterval;
-    public @Nullable String allowedIps;
-    public @Nullable Boolean allowAwsIps;
-    public @Nullable Boolean weatherEnabled;
+
+    @Nullable
+    public String apiKey;
     
-    // Getters for compatibility
-    public @Nullable String getAccessToken() { return accessToken; }
-    public @Nullable String getSecretKey() { return secretKey; }
-    public @Nullable String getDeviceId() { return deviceId; }
-    public @Nullable String getWebhookUrl() { return webhookUrl; }
-    public @Nullable Boolean isWebhookEnabled() { return webhookEnabled; }
-    public @Nullable Integer getWebhookCheckInterval() { return webhookCheckInterval; }
-    public @Nullable String getAllowedIps() { return allowedIps; }
-    public @Nullable Boolean isAllowAwsIps() { return allowAwsIps; }
-    public @Nullable Boolean isWeatherEnabled() { return weatherEnabled; }
+    @Nullable
+    public Integer refresh;
+    
+    @Nullable
+    public Integer webhookPort;
+    
+    @Nullable
+    public Boolean webhookEnabled;
+    
+    @Nullable
+    public String host;
+    
+    @Nullable
+    public Integer port;
+    
+    @Nullable
+    public String callbackUrl;
+    
+    @Nullable
+    public String ipFilter;
+    
+    @Nullable
+    public Boolean clearAllCallbacks;
+    
+    @Nullable
+    public Integer defaultRuntime;
+
+    @Override
+    public String toString() {
+        return "RachioBridgeConfiguration [apiKey=" + (apiKey != null ? "[PROTECTED]" : "null") 
+            + ", refresh=" + refresh 
+            + ", webhookPort=" + webhookPort 
+            + ", webhookEnabled=" + webhookEnabled 
+            + ", host=" + host 
+            + ", port=" + port 
+            + ", callbackUrl=" + callbackUrl 
+            + ", ipFilter=" + ipFilter 
+            + ", clearAllCallbacks=" + clearAllCallbacks 
+            + ", defaultRuntime=" + defaultRuntime + "]";
+    }
 }
