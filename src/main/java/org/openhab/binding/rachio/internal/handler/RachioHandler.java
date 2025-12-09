@@ -1,22 +1,14 @@
 package org.openhab.binding.rachio.internal.handler;
 
-import java.math.BigDecimal;
-import java.time.ZonedDateTime;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Map;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.rachio.internal.RachioBindingConstants;
 import org.openhab.binding.rachio.internal.api.RachioHttp;
-import org.openhab.binding.rachio.internal.api.dto.RachioWebHookEvent;
-import org.openhab.core.config.core.Configuration;
+import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
+import org.openhab.binding.rachio.internal.config.RachioDeviceConfiguration;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
-import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.StringType;
 import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Channel;
@@ -33,298 +25,180 @@ import org.openhab.core.types.State;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.util.Map;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
 /**
- * Abstract base handler for Rachio things (devices and zones)
+ * The {@link RachioHandler} is a base handler class for Rachio things.
+ * Provides common functionality for device and zone handlers.
  *
- * @author Damion Boyett - Initial contribution
+ * @author David Boyett - Initial contribution
  */
 @NonNullByDefault
-public abstract class RachioHandler extends BaseThingHandler {
-    protected final Logger logger = LoggerFactory.getLogger(RachioHandler.class);
+public abstract class RachioHandler extends BaseThingHandler implements RachioStatusListener {
+
+    protected final Logger logger = LoggerFactory.getLogger(getClass());
     
+    protected @Nullable RachioHttp rachioHttp;
     protected @Nullable RachioBridgeHandler bridgeHandler;
-    protected @Nullable RachioHttp http;
     protected @Nullable ScheduledFuture<?> refreshJob;
     
-    protected static final int REFRESH_INTERVAL_SECONDS = 60;
+    // Rate limiting tracking
+    protected int rateLimitRemaining = 100;
+    protected int rateLimitLimit = 100;
+    protected @Nullable Instant rateLimitReset;
 
     public RachioHandler(Thing thing) {
         super(thing);
     }
 
     @Override
-    public void initialize() {
-        logger.debug("Initializing Rachio handler for thing: {}", getThing().getUID());
-        
-        Bridge bridge = getBridge();
-        if (bridge == null) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Bridge not found");
-            return;
-        }
-        
-        bridgeHandler = (RachioBridgeHandler) bridge.getHandler();
-        if (bridgeHandler == null) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "Bridge handler not available");
-            return;
-        }
-        
-        http = bridgeHandler.getRachioHttp();
-        if (http == null) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "HTTP client not available");
-            return;
-        }
-        
-        // Register this handler as a status listener
-        bridgeHandler.registerStatusListener(new RachioStatusListener() {
-            @Override
-            public void deviceListUpdated(Collection<org.openhab.binding.rachio.internal.api.dto.RachioDevice> devices) {
-                // Default implementation - can be overridden
-            }
-            
-            @Override
-            public void deviceUpdated(org.openhab.binding.rachio.internal.api.dto.RachioDevice device) {
-                // Default implementation - can be overridden
-            }
-            
-            @Override
-            public void webhookEventReceived(RachioWebHookEvent event) {
-                handleWebhookEvent(event);
-            }
-        });
-        
-        scheduler.submit(() -> {
-            try {
-                initializeThing();
-                startRefreshJob();
-                updateStatus(ThingStatus.ONLINE);
-            } catch (Exception e) {
-                logger.error("Failed to initialize thing: {}", e.getMessage(), e);
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
-            }
-        });
-    }
-    
+    public abstract void initialize();
+
     @Override
-    public void dispose() {
-        logger.debug("Disposing Rachio handler for thing: {}", getThing().getUID());
-        
-        stopRefreshJob();
-        
-        RachioBridgeHandler localBridgeHandler = bridgeHandler;
-        if (localBridgeHandler != null) {
-            // Unregister status listener if needed
+    public abstract void dispose();
+
+    @Override
+    public abstract void handleCommand(ChannelUID channelUID, Command command);
+
+    @Override
+    public abstract void refresh();
+
+    @Override
+    public abstract void onWebhookEvent(String eventType, String deviceId, @Nullable String zoneId, 
+                                        @Nullable Map<String, Object> data);
+
+    @Override
+    public Thing getThing() {
+        return super.getThing();
+    }
+
+    // Common helper methods
+    protected void logDebug(String message, Object... args) {
+        if (logger.isDebugEnabled()) {
+            logger.debug(message, args);
         }
-        
-        super.dispose();
     }
-    
-    /**
-     * Initialize the specific thing (device or zone)
-     */
-    protected abstract void initializeThing() throws Exception;
-    
-    /**
-     * Handle a webhook event
-     */
-    protected abstract void handleWebhookEvent(RachioWebHookEvent event);
-    
-    /**
-     * Refresh all channels
-     */
-    protected abstract void refreshAllChannels();
-    
-    /**
-     * Start the refresh job
-     */
-    protected void startRefreshJob() {
-        stopRefreshJob(); // Ensure no existing job
-        
-        refreshJob = scheduler.scheduleWithFixedDelay(() -> {
-            try {
-                refreshAllChannels();
-            } catch (Exception e) {
-                logger.warn("Error refreshing channels: {}", e.getMessage(), e);
-            }
-        }, 10, REFRESH_INTERVAL_SECONDS, TimeUnit.SECONDS);
-        
-        logger.debug("Started refresh job for thing: {}", getThing().getUID());
+
+    protected void logInfo(String message, Object... args) {
+        logger.info(message, args);
     }
-    
-    /**
-     * Stop the refresh job
-     */
-    protected void stopRefreshJob() {
-        ScheduledFuture<?> localRefreshJob = refreshJob;
-        if (localRefreshJob != null && !localRefreshJob.isCancelled()) {
-            localRefreshJob.cancel(true);
+
+    protected void logWarn(String message, Object... args) {
+        logger.warn(message, args);
+    }
+
+    protected void logError(String message, Throwable t, Object... args) {
+        logger.error(message, args, t);
+    }
+
+    protected void logError(String message, Object... args) {
+        logger.error(message, args);
+    }
+
+    protected void scheduleRefresh(int delaySeconds) {
+        scheduler.schedule(this::refresh, delaySeconds, TimeUnit.SECONDS);
+    }
+
+    protected void cancelRefreshJob() {
+        if (refreshJob != null && !refreshJob.isCancelled()) {
+            refreshJob.cancel(true);
             refreshJob = null;
-            logger.debug("Stopped refresh job for thing: {}", getThing().getUID());
         }
     }
-    
-    /**
-     * Get the bridge handler
-     */
-    protected @Nullable RachioBridgeHandler getBridgeHandler() {
-        return bridgeHandler;
-    }
-    
-    /**
-     * Get the HTTP client
-     */
-    protected @Nullable RachioHttp getRachioHttp() {
-        return http;
-    }
-    
-    /**
-     * Create a channel dynamically
-     */
-    protected Channel createChannel(String channelId, String itemType, String label, 
-                                   @Nullable String description, @Nullable Map<String, String> properties) {
-        ChannelUID channelUID = new ChannelUID(getThing().getUID(), channelId);
-        ChannelTypeUID channelTypeUID = new ChannelTypeUID("rachio", channelId);
-        
-        ChannelBuilder channelBuilder = ChannelBuilder.create(channelUID, itemType)
-            .withType(channelTypeUID)
-            .withLabel(label != null ? label : channelId);
+
+    protected void createChannelIfMissing(String channelId, String itemType, String category) {
+        if (thing.getChannel(channelId) == null) {
+            ChannelUID channelUID = new ChannelUID(thing.getUID(), channelId);
+            ChannelTypeUID channelTypeUID = new ChannelTypeUID(RachioBindingConstants.BINDING_ID, 
+                channelId.toLowerCase());
             
-        if (description != null) {
-            channelBuilder.withDescription(description);
+            Channel channel = ChannelBuilder.create(channelUID, itemType)
+                .withType(channelTypeUID)
+                .withLabel(channelId)
+                .withDescription("Dynamic channel for " + channelId)
+                .build();
+            
+            updateThing(editThing().withChannel(channel).build());
+            logger.debug("Created dynamic channel: {}", channelId);
+        }
+    }
+
+    protected void updateRateLimitChannels() {
+        if (rachioHttp == null) {
+            return;
         }
         
-        if (properties != null && !properties.isEmpty()) {
-            channelBuilder.withProperties(properties);
-        }
-        
-        return channelBuilder.build();
-    }
-    
-    /**
-     * Update a channel state with a String value
-     */
-    protected void updateState(String channelId, String value) {
-        updateState(channelId, new StringType(value));
-    }
-    
-    /**
-     * Update a channel state with a boolean value
-     */
-    protected void updateState(String channelId, boolean value) {
-        updateState(channelId, value ? OnOffType.ON : OnOffType.OFF);
-    }
-    
-    /**
-     * Update a channel state with an int value
-     */
-    protected void updateState(String channelId, int value) {
-        updateState(channelId, new DecimalType(value));
-    }
-    
-    /**
-     * Update a channel state with a long value
-     */
-    protected void updateState(String channelId, long value) {
-        updateState(channelId, new DecimalType(value));
-    }
-    
-    /**
-     * Update a channel state with a double value
-     */
-    protected void updateState(String channelId, double value) {
-        updateState(channelId, new DecimalType(value));
-    }
-    
-    /**
-     * Update a channel state with a float value
-     */
-    protected void updateState(String channelId, float value) {
-        updateState(channelId, new DecimalType(value));
-    }
-    
-    /**
-     * Update a channel state with a BigDecimal value
-     */
-    protected void updateState(String channelId, BigDecimal value) {
-        updateState(channelId, new DecimalType(value));
-    }
-    
-    /**
-     * Update a channel state with a quantity value (using string unit)
-     */
-    protected void updateState(String channelId, Number value, String unit) {
-        updateState(channelId, new QuantityType<>(value + " " + unit));
-    }
-    
-    /**
-     * Update a channel state with a datetime value
-     */
-    protected void updateState(String channelId, ZonedDateTime dateTime) {
-        updateState(channelId, new DateTimeType(dateTime));
-    }
-    
-    /**
-     * Get a configuration value as String
-     */
-    protected @Nullable String getConfigAsString(String key) {
-        Object value = getConfig().get(key);
-        return value != null ? value.toString() : null;
-    }
-    
-    /**
-     * Get a configuration value as Integer
-     */
-    protected @Nullable Integer getConfigAsInt(String key) {
-        Object value = getConfig().get(key);
-        if (value instanceof Number) {
-            return ((Number) value).intValue();
-        } else if (value instanceof String) {
-            try {
-                return Integer.parseInt((String) value);
-            } catch (NumberFormatException e) {
-                return null;
+        try {
+            Map<String, String> rateLimits = rachioHttp.getRateLimits();
+            if (rateLimits != null) {
+                String remainingStr = rateLimits.get(RachioBindingConstants.HEADER_RATE_LIMIT_REMAINING);
+                String limitStr = rateLimits.get(RachioBindingConstants.HEADER_RATE_LIMIT_LIMIT);
+                String resetStr = rateLimits.get(RachioBindingConstants.HEADER_RATE_LIMIT_RESET);
+                
+                if (remainingStr != null) {
+                    rateLimitRemaining = Integer.parseInt(remainingStr);
+                    updateState(RachioBindingConstants.CHANNEL_RATE_LIMIT_REMAINING, 
+                        new DecimalType(rateLimitRemaining));
+                }
+                
+                if (limitStr != null) {
+                    rateLimitLimit = Integer.parseInt(limitStr);
+                    if (rateLimitLimit > 0) {
+                        double percentUsed = ((double) (rateLimitLimit - rateLimitRemaining) / rateLimitLimit) * 100;
+                        updateState(RachioBindingConstants.CHANNEL_RATE_LIMIT_PERCENT, 
+                            new DecimalType(percentUsed));
+                    }
+                }
+                
+                if (resetStr != null) {
+                    long resetTime = Long.parseLong(resetStr);
+                    rateLimitReset = Instant.ofEpochSecond(resetTime);
+                    ZonedDateTime resetDateTime = ZonedDateTime.ofInstant(rateLimitReset, ZoneId.systemDefault());
+                    updateState(RachioBindingConstants.CHANNEL_RATE_LIMIT_RESET, 
+                        new DateTimeType(resetDateTime));
+                }
+                
+                // Update status based on rate limits
+                String status = getRateLimitStatus();
+                updateState(RachioBindingConstants.CHANNEL_RATE_LIMIT_STATUS, new StringType(status));
             }
+        } catch (NumberFormatException e) {
+            logger.warn("Error parsing rate limit values: {}", e.getMessage());
         }
-        return null;
     }
-    
-    /**
-     * Get a configuration value as Boolean
-     */
-    protected @Nullable Boolean getConfigAsBoolean(String key) {
-        Object value = getConfig().get(key);
-        if (value instanceof Boolean) {
-            return (Boolean) value;
-        } else if (value instanceof String) {
-            return Boolean.parseBoolean((String) value);
+
+    protected String getRateLimitStatus() {
+        if (rateLimitRemaining <= RachioBindingConstants.RATE_LIMIT_CRITICAL_THRESHOLD) {
+            return "CRITICAL";
+        } else if (rateLimitRemaining <= RachioBindingConstants.RATE_LIMIT_WARNING_THRESHOLD) {
+            return "WARNING";
+        } else {
+            return "OK";
         }
-        return null;
     }
-    
-    /**
-     * Get a configuration value as BigDecimal
-     */
-    protected @Nullable BigDecimal getConfigAsBigDecimal(String key) {
-        Object value = getConfig().get(key);
-        if (value instanceof BigDecimal) {
-            return (BigDecimal) value;
-        } else if (value instanceof Number) {
-            return BigDecimal.valueOf(((Number) value).doubleValue());
-        } else if (value instanceof String) {
-            try {
-                return new BigDecimal((String) value);
-            } catch (NumberFormatException e) {
-                return null;
-            }
+
+    protected @Nullable RachioBridgeHandler getBridgeHandler() {
+        if (getBridge() == null) {
+            return null;
         }
-        return null;
+        return (RachioBridgeHandler) getBridge().getHandler();
     }
-    
-    /**
-     * Update configuration
-     */
-    protected void updateConfiguration(String key, Object value) {
-        Configuration config = editConfiguration();
-        config.put(key, value);
-        updateConfiguration(config);
+
+    protected void handleRefreshCommand(ChannelUID channelUID) {
+        logger.debug("Refresh command for channel: {}", channelUID);
+        refresh();
+    }
+
+    protected void updatePropertyIfChanged(String propertyName, @Nullable String newValue) {
+        String currentValue = thing.getProperties().get(propertyName);
+        if (newValue != null && !newValue.equals(currentValue)) {
+            updateProperty(propertyName, newValue);
+        }
     }
 }
