@@ -3,13 +3,32 @@ package org.openhab.binding.rachio.internal.api;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+import java.time.Instant;
+
+/**
+ * DTO for Rachio Webhook API Entry
+ *
+ * @author David Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class RachioApiWebHookEntry {
-    public @Nullable String id;
-    public @Nullable String url;
-    public @Nullable String externalId;
+    @Nullable
+    public String id;
     
-    public @Nullable String getId() { return id; }
-    public @Nullable String getUrl() { return url; }
-    public @Nullable String getExternalId() { return externalId; }
+    @Nullable
+    public String url;
+    
+    @Nullable
+    public String externalId;
+    
+    @Nullable
+    public Instant createdAt;
+    
+    @Nullable
+    public String status; // ACTIVE, INACTIVE
+    
+    @Override
+    public String toString() {
+        return "RachioApiWebHookEntry [id=" + id + ", url=" + url + ", externalId=" + externalId + "]";
+    }
 }
