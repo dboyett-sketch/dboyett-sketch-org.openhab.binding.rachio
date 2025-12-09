@@ -34,8 +34,8 @@ public class RachioBindingConstants {
     public static final String CONFIG_ALLOW_AWS_IPS = "allowAwsIps";
     public static final String CONFIG_WEATHER_ENABLED = "weatherEnabled";
 
-    // Device configuration
-    public static final String CONFIG_DEVICE_ID = "deviceId";
+    // Device configuration (different constant name to avoid conflict with bridge config)
+    public static final String CONFIG_DEVICE_DEVICE_ID = "deviceId";
 
     // Zone configuration
     public static final String CONFIG_ZONE_ID = "zoneId";
@@ -136,4 +136,40 @@ public class RachioBindingConstants {
     public static final String EVENT_SCHEDULE_STATUS = "SCHEDULE_STATUS_EVENT";
     public static final String EVENT_RAIN_SENSOR = "RAIN_SENSOR_DETECTION_EVENT";
     public static final String EVENT_ALERT = "ALERT_EVENT";
+    
+    // API constants
+    public static final String API_BASE_URL = "https://api.rach.io/1/public";
+    public static final String WEBHOOK_DESCRIPTION = "OpenHAB Rachio Binding";
+    
+    // Rate limiting constants
+    public static final int DEFAULT_RATE_LIMIT_REMAINING = 100;
+    public static final int DEFAULT_RATE_LIMIT_RESET = 3600;
+    public static final int RATE_LIMIT_WARNING_THRESHOLD = 20;
+    public static final int RATE_LIMIT_CRITICAL_THRESHOLD = 5;
+    
+    // Refresh intervals (seconds)
+    public static final int DEFAULT_REFRESH_INTERVAL = 60;
+    public static final int DEVICE_POLLING_INTERVAL = 60;
+    public static final int FORECAST_UPDATE_INTERVAL = 3600;
+    public static final int USAGE_UPDATE_INTERVAL = 1800;
+    public static final int WEBHOOK_HEALTH_CHECK_INTERVAL = 3600;
+    
+    // Default values
+    public static final int DEFAULT_ZONE_RUNTIME = 600; // 10 minutes in seconds
+    public static final int DEFAULT_RAIN_DELAY = 24; // 24 hours
+    public static final int MAX_ZONE_RUNTIME = 10800; // 3 hours in seconds
+    
+    // Units
+    public static final String UNIT_SQUARE_METERS = "m²";
+    public static final String UNIT_SQUARE_FEET = "ft²";
+    public static final String UNIT_CELSIUS = "°C";
+    public static final String UNIT_FAHRENHEIT = "°F";
+    public static final String UNIT_MILLIMETERS = "mm";
+    public static final String UNIT_INCHES = "in";
+    public static final String UNIT_PERCENT = "%";
+    public static final String UNIT_KILOMETERS_PER_HOUR = "km/h";
+    public static final String UNIT_MILES_PER_HOUR = "mph";
+    public static final String UNIT_GALLONS = "gal";
+    public static final String UNIT_LITERS = "L";
+    public static final String UNIT_WATTS_PER_SQUARE_METER = "W/m²";
 }
