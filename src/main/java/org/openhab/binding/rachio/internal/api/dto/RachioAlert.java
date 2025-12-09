@@ -1,21 +1,40 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.time.Instant;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+import java.time.Instant;
+
+/**
+ * DTO for Device Alerts
+ *
+ * @author David Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class RachioAlert {
-    public @Nullable String id;
-    public @Nullable String type;
-    public @Nullable String message;
-    public @Nullable Instant createdDate;
-    public @Nullable Boolean read;
+    @Nullable
+    public String id;
     
-    public @Nullable String getId() { return id; }
-    public @Nullable String getType() { return type; }
-    public @Nullable String getMessage() { return message; }
-    public @Nullable Instant getCreatedDate() { return createdDate; }
-    public @Nullable Boolean isRead() { return read; }
+    @Nullable
+    public String type; // OFFLINE, ONLINE, RAIN_DELAY, SCHEDULE_SKIP, etc.
+    
+    @Nullable
+    public String severity; // INFO, WARNING, ERROR
+    
+    @Nullable
+    public String message;
+    
+    @Nullable
+    public Instant timestamp;
+    
+    @Nullable
+    public Boolean acknowledged;
+    
+    @Nullable
+    public Map<String, Object> details;
+    
+    @Override
+    public String toString() {
+        return "RachioAlert [type=" + type + ", severity=" + severity + ", message=" + message + "]";
+    }
 }
