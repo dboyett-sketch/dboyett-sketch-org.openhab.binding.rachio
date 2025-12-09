@@ -7,17 +7,22 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.rachio.internal.config.RachioBridgeConfiguration;
-import org.openhab.core.io.net.http.HttpClientFactory;
-import org.openhab.core.io.net.http.HttpRequestBuilder;
+import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
+import org.openhab.binding.rachio.internal.api.dto.RachioPerson;
+import org.openhab.binding.rachio.internal.api.dto.RachioZone;
+import org.openhab.binding.rachio.internal.api.dto.RachioSchedule;
+import org.openhab.binding.rachio.internal.api.dto.RachioForecast;
+import org.openhab.binding.rachio.internal.api.dto.RachioUsage;
+import org.openhab.binding.rachio.internal.api.dto.RachioAlert;
+import org.openhab.binding.rachio.internal.api.dto.RachioApiWebHookList;
+import org.openhab.binding.rachio.internal.api.dto.RachioApiWebHookEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -65,6 +70,8 @@ public class RachioHttp {
                 .create();
     }
 
+    // ============ GENERIC HTTP METHODS ============
+    
     /**
      * Make a GET request to the Rachio API
      */
@@ -150,37 +157,226 @@ public class RachioHttp {
         }
     }
 
+    // ============ RACHIO API SPECIFIC METHODS ============
+    
     /**
-     * Make an asynchronous GET request
+     * Get person info
      */
-    public void getAsync(String endpoint, HttpCallback callback) {
-        String url = "https://api.rach.io/1/public/" + endpoint;
-        
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(url))
-                .header("Authorization", "Bearer " + config.apiKey)
-                .header("Accept", "application/json")
-                .GET()
-                .build();
-        
-        httpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(response -> {
-                    handleRateLimitHeaders(response.headers().map(), endpoint);
-                    return response;
-                })
-                .thenAccept(response -> {
-                    if (response.statusCode() >= 200 && response.statusCode() < 300) {
-                        callback.onSuccess(response.body());
-                    } else {
-                        callback.onError(new RachioApiException("HTTP " + response.statusCode()));
-                    }
-                })
-                .exceptionally(throwable -> {
-                    callback.onError(new RachioApiException("Async request failed", throwable));
-                    return null;
-                });
+    public @Nullable RachioPerson getPersonInfo() throws RachioApiException {
+        String response = get("person/info");
+        if (response != null) {
+            return gson.fromJson(response, RachioPerson.class);
+        }
+        return null;
     }
 
+    /**
+     * Get all devices for the person
+     */
+    public @Nullable List<RachioDevice> getDevices() throws RachioApiException {
+        String response = get("person/" + config.personId + "/device");
+        if (response != null) {
+            JsonObject json = JsonParser.parseString(response).getAsJsonObject();
+            return gson.fromJson(json.get("devices"), List.class);
+        }
+        return null;
+    }
+
+    /**
+     * Get specific device
+     */
+    public @Nullable RachioDevice getDevice(@Nullable String deviceId) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty()) {
+            throw new RachioApiException("Device ID is required");
+        }
+        String response = get("device/" + deviceId);
+        if (response != null) {
+            return gson.fromJson(response, RachioDevice.class);
+        }
+        return null;
+    }
+
+    /**
+     * Get specific zone
+     */
+    public @Nullable RachioZone getZone(@Nullable String deviceId, @Nullable String zoneId) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty() || zoneId == null || zoneId.isEmpty()) {
+            throw new RachioApiException("Device ID and Zone ID are required");
+        }
+        String response = get("zone/" + zoneId);
+        if (response != null) {
+            return gson.fromJson(response, RachioZone.class);
+        }
+        return null;
+    }
+
+    /**
+     * Start a zone
+     */
+    public void startZone(@Nullable String deviceId, @Nullable String zoneId, int duration) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty() || zoneId == null || zoneId.isEmpty()) {
+            throw new RachioApiException("Device ID and Zone ID are required");
+        }
+        
+        JsonObject json = new JsonObject();
+        json.addProperty("id", zoneId);
+        json.addProperty("duration", duration);
+        
+        post("zone/start", json);
+    }
+
+    /**
+     * Stop a zone
+     */
+    public void stopZone(@Nullable String deviceId, @Nullable String zoneId) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty() || zoneId == null || zoneId.isEmpty()) {
+            throw new RachioApiException("Device ID and Zone ID are required");
+        }
+        
+        JsonObject json = new JsonObject();
+        json.addProperty("id", zoneId);
+        
+        put("zone/stop", json);
+    }
+
+    /**
+     * Set zone enabled/disabled
+     */
+    public void setZoneEnabled(@Nullable String deviceId, @Nullable String zoneId, boolean enabled) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty() || zoneId == null || zoneId.isEmpty()) {
+            throw new RachioApiException("Device ID and Zone ID are required");
+        }
+        
+        JsonObject json = new JsonObject();
+        json.addProperty("enabled", enabled);
+        
+        put("zone/" + zoneId, json);
+    }
+
+    /**
+     * Start rain delay
+     */
+    public void startRainDelay(@Nullable String deviceId, int duration) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty()) {
+            throw new RachioApiException("Device ID is required");
+        }
+        
+        JsonObject json = new JsonObject();
+        json.addProperty("duration", duration);
+        
+        post("device/" + deviceId + "/rainDelay", json);
+    }
+
+    /**
+     * Stop rain delay
+     */
+    public void stopRainDelay(@Nullable String deviceId) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty()) {
+            throw new RachioApiException("Device ID is required");
+        }
+        
+        delete("device/" + deviceId + "/rainDelay");
+    }
+
+    /**
+     * Get webhooks
+     */
+    public @Nullable RachioApiWebHookList getWebhooks() throws RachioApiException {
+        String response = get("webhook");
+        if (response != null) {
+            return gson.fromJson(response, RachioApiWebHookList.class);
+        }
+        return null;
+    }
+
+    /**
+     * Register a webhook
+     */
+    public void registerWebhook(String url, String externalId) throws RachioApiException {
+        JsonObject json = new JsonObject();
+        json.addProperty("url", url);
+        json.addProperty("externalId", externalId);
+        json.addProperty("eventTypes", "DEVICE_STATUS_EVENT,ZONE_STATUS_EVENT,RAIN_DELAY_EVENT");
+        
+        post("webhook", json);
+    }
+
+    /**
+     * Delete all webhooks
+     */
+    public void deleteAllWebhooks() throws RachioApiException {
+        delete("webhook/all");
+    }
+
+    /**
+     * Get device forecast
+     */
+    public @Nullable RachioForecast getForecast(@Nullable String deviceId) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty()) {
+            throw new RachioApiException("Device ID is required");
+        }
+        String response = get("device/" + deviceId + "/forecast");
+        if (response != null) {
+            return gson.fromJson(response, RachioForecast.class);
+        }
+        return null;
+    }
+
+    /**
+     * Get device usage
+     */
+    public @Nullable RachioUsage getUsage(@Nullable String deviceId) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty()) {
+            throw new RachioApiException("Device ID is required");
+        }
+        String response = get("device/" + deviceId + "/usage");
+        if (response != null) {
+            return gson.fromJson(response, RachioUsage.class);
+        }
+        return null;
+    }
+
+    /**
+     * Get device alerts
+     */
+    public @Nullable List<RachioAlert> getAlerts(@Nullable String deviceId) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty()) {
+            throw new RachioApiException("Device ID is required");
+        }
+        String response = get("device/" + deviceId + "/alerts");
+        if (response != null) {
+            return gson.fromJson(response, List.class);
+        }
+        return null;
+    }
+
+    /**
+     * Get device schedules
+     */
+    public @Nullable List<RachioSchedule> getSchedules(@Nullable String deviceId) throws RachioApiException {
+        if (deviceId == null || deviceId.isEmpty()) {
+            throw new RachioApiException("Device ID is required");
+        }
+        String response = get("device/" + deviceId + "/schedule");
+        if (response != null) {
+            return gson.fromJson(response, List.class);
+        }
+        return null;
+    }
+
+    /**
+     * Get rate limits
+     */
+    public Map<String, Integer> getRateLimits() {
+        Map<String, Integer> limits = new ConcurrentHashMap<>();
+        for (Map.Entry<String, RateLimitInfo> entry : rateLimitMap.entrySet()) {
+            limits.put(entry.getKey(), entry.getValue().remaining);
+        }
+        return limits;
+    }
+
+    // ============ UTILITY METHODS ============
+    
     /**
      * Handle rate limiting headers from Rachio API
      */
@@ -257,14 +453,6 @@ public class RachioHttp {
      */
     public Gson getGson() {
         return gson;
-    }
-
-    /**
-     * Interface for async callbacks
-     */
-    public interface HttpCallback {
-        void onSuccess(@Nullable String response);
-        void onError(RachioApiException error);
     }
 
     /**
