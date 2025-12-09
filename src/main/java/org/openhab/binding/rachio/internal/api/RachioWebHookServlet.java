@@ -1,18 +1,11 @@
 package org.openhab.binding.rachio.internal.api;
 
+import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.PrintWriter;
-import java.security.InvalidKeyException;
-import java.security.NoSuchAlgorithmException;
-import java.time.Instant;
-import java.time.format.DateTimeParseException;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.stream.Collectors;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
 import javax.servlet.ServletException;
 import javax.servlet.http.HttpServlet;
 import javax.servlet.http.HttpServletRequest;
@@ -20,239 +13,196 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.api.dto.RachioWebHookEvent;
 import org.openhab.binding.rachio.internal.handler.RachioBridgeHandler;
-import org.openhab.core.io.net.http.HttpUtil;
+import org.openhab.binding.rachio.internal.api.dto.RachioWebHookEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
 import com.google.gson.JsonSyntaxException;
 
 /**
- * Servlet for handling incoming Rachio webhook events.
- * This servlet validates HMAC signatures, filters by IP, and processes events.
+ * Servlet for handling Rachio webhook callbacks
+ *
+ * @author Damion Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioWebHookServlet extends HttpServlet {
     private static final long serialVersionUID = 1L;
+    private static final String HEADER_SIGNATURE = "X-Rachio-Signature";
+    private static final String HEADER_FORWARDED_FOR = "X-Forwarded-For";
+
     private final Logger logger = LoggerFactory.getLogger(RachioWebHookServlet.class);
-    
     private final RachioBridgeHandler bridgeHandler;
     private final Gson gson;
-    
-    // Cache for HMAC validation to prevent timing attacks
-    private final Map<String, Boolean> hmacCache = new ConcurrentHashMap<>();
-    
+
     public RachioWebHookServlet(RachioBridgeHandler bridgeHandler) {
         this.bridgeHandler = bridgeHandler;
-        this.gson = new GsonBuilder()
-                .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
-                .create();
+        this.gson = bridgeHandler.getGson();
     }
-    
-    /**
-     * Activate the servlet with port and secret
-     */
-    public void activate(int port, String secret) {
-        logger.debug("Rachio WebHook Servlet activated on port {} with secret configured", port);
-    }
-    
-    /**
-     * Deactivate the servlet
-     */
-    public void deactivate() {
-        logger.debug("Rachio WebHook Servlet deactivated");
-    }
-    
-    @Override
-    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        logger.debug("GET request received for webhook verification");
-        resp.setContentType("text/plain");
-        resp.setStatus(HttpServletResponse.SC_OK);
-        PrintWriter writer = resp.getWriter();
-        writer.write("Rachio OpenHAB Binding WebHook Endpoint Active");
-        writer.flush();
-    }
-    
+
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String clientIp = getClientIp(req);
-        String contentType = req.getContentType();
-        String signature = req.getHeader("X-RACHIO-SIGNATURE");
-        String timestamp = req.getHeader("X-RACHIO-TIMESTAMP");
+        logger.debug("Received webhook POST request");
         
-        logger.debug("WebHook POST received from IP: {}", clientIp);
-        logger.debug("Content-Type: {}, Signature: {}, Timestamp: {}", contentType, 
-                signature != null ? "[PRESENT]" : "[MISSING]", timestamp);
-        
-        // Validate basic requirements
-        if (!validateBasicRequirements(req, resp, clientIp, signature, timestamp)) {
-            return;
-        }
-        
-        // Read request body
-        String content = HttpUtil.readData(req);
-        if (content == null || content.isEmpty()) {
-            logger.warn("Empty webhook content received from {}", clientIp);
-            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Empty request body");
-            return;
-        }
-        
-        logger.trace("Webhook content: {}", content);
-        
-        // Validate HMAC signature
-        if (!validateHmacSignature(content, signature, timestamp)) {
-            logger.warn("HMAC validation failed for webhook from {}", clientIp);
-            sendError(resp, HttpServletResponse.SC_UNAUTHORIZED, "Invalid signature");
-            return;
-        }
-        
-        // Parse and process the event
         try {
-            RachioWebHookEvent event = gson.fromJson(content, RachioWebHookEvent.class);
-            if (event == null) {
-                logger.warn("Failed to parse webhook event from JSON: {}", content);
-                sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Invalid JSON");
+            // Read request body
+            String requestBody = readRequestBody(req);
+            if (requestBody == null || requestBody.isEmpty()) {
+                logger.warn("Empty webhook request body");
+                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
                 return;
             }
+
+            // Get client IP address
+            String clientIp = getClientIp(req);
             
-            logger.debug("Webhook event parsed: type={}, deviceId={}, zoneId={}", 
-                    event.getType(), event.getDeviceId(), event.getZoneId());
+            // Get X-Forwarded-For header if present
+            String forwardedFor = req.getHeader(HEADER_FORWARDED_FOR);
             
-            // Process the event asynchronously
-            processEventAsync(event);
+            // Validate IP address
+            if (!bridgeHandler.isIpAllowed(clientIp, forwardedFor)) {
+                logger.warn("Webhook request from unauthorized IP: {} (X-Forwarded-For: {})", clientIp, forwardedFor);
+                resp.setStatus(HttpServletResponse.SC_FORBIDDEN);
+                return;
+            }
+
+            // Validate signature
+            String signature = req.getHeader(HEADER_SIGNATURE);
+            if (!isValidSignature(requestBody, signature)) {
+                logger.warn("Invalid webhook signature");
+                resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+                return;
+            }
+
+            // Parse webhook event
+            RachioWebHookEvent event = parseWebhookEvent(requestBody);
+            if (event == null) {
+                logger.warn("Failed to parse webhook event");
+                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+                return;
+            }
+
+            // Handle the event
+            bridgeHandler.handleWebhookEvent(event);
             
-            // Send success response
+            // Send successful response
             resp.setStatus(HttpServletResponse.SC_OK);
             resp.setContentType("application/json");
-            PrintWriter writer = resp.getWriter();
-            writer.write("{\"status\":\"success\",\"message\":\"Event processed\"}");
-            writer.flush();
+            resp.getWriter().write("{\"status\":\"ok\"}");
             
-        } catch (JsonSyntaxException e) {
-            logger.warn("Invalid JSON in webhook from {}: {}", clientIp, e.getMessage());
-            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Invalid JSON format");
+            logger.debug("Successfully processed webhook event: {}", event.type);
+            
         } catch (Exception e) {
-            logger.error("Error processing webhook from {}: {}", clientIp, e.getMessage(), e);
-            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal server error");
+            logger.error("Error processing webhook request: {}", e.getMessage(), e);
+            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
         }
     }
-    
+
+    @Override
+    protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        // Simple health check endpoint
+        resp.setStatus(HttpServletResponse.SC_OK);
+        resp.setContentType("application/json");
+        resp.getWriter().write("{\"status\":\"online\",\"service\":\"rachio-webhook\"}");
+    }
+
     /**
-     * Validate basic requirements for the webhook request
+     * Read the request body as a string
      */
-    private boolean validateBasicRequirements(HttpServletRequest req, HttpServletResponse resp, 
-            String clientIp, @Nullable String signature, @Nullable String timestamp) throws IOException {
+    private @Nullable String readRequestBody(HttpServletRequest req) throws IOException {
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(req.getInputStream(), StandardCharsets.UTF_8))) {
+            return reader.lines().collect(Collectors.joining("\n"));
+        } catch (IOException e) {
+            logger.warn("Failed to read request body: {}", e.getMessage());
+            throw e;
+        }
+    }
+
+    /**
+     * Get client IP address from request
+     */
+    private String getClientIp(HttpServletRequest req) {
+        String ip = req.getRemoteAddr();
         
-        // Check if webhooks are enabled
-        if (!bridgeHandler.isWebhookEnabled()) {
-            logger.debug("Webhooks disabled, rejecting request from {}", clientIp);
-            sendError(resp, HttpServletResponse.SC_SERVICE_UNAVAILABLE, "Webhooks disabled");
-            return false;
+        // Check for proxy headers
+        String xForwardedFor = req.getHeader(HEADER_FORWARDED_FOR);
+        if (xForwardedFor != null && !xForwardedFor.isEmpty()) {
+            // X-Forwarded-For can contain multiple IPs, first one is the client
+            String[] ips = xForwardedFor.split(",");
+            if (ips.length > 0) {
+                ip = ips[0].trim();
+            }
         }
         
-        // Check IP filtering
-        if (!bridgeHandler.isIpAllowed(clientIp)) {
-            logger.warn("IP {} not allowed for webhook access", clientIp);
-            sendError(resp, HttpServletResponse.SC_FORBIDDEN, "IP not allowed");
-            return false;
-        }
-        
-        // Check required headers
+        return ip;
+    }
+
+    /**
+     * Validate the webhook signature
+     */
+    private boolean isValidSignature(String requestBody, @Nullable String signature) {
         if (signature == null || signature.isEmpty()) {
-            logger.warn("Missing X-RACHIO-SIGNATURE header from {}", clientIp);
-            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing signature header");
+            logger.warn("Missing webhook signature");
             return false;
         }
-        
-        if (timestamp == null || timestamp.isEmpty()) {
-            logger.warn("Missing X-RACHIO-TIMESTAMP header from {}", clientIp);
-            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing timestamp header");
+
+        // Get secret key from bridge handler
+        String secretKey = getSecretKey();
+        if (secretKey == null || secretKey.isEmpty()) {
+            logger.warn("No secret key configured for signature validation");
             return false;
         }
-        
-        // Validate timestamp (prevent replay attacks)
+
         try {
-            Instant eventTime = Instant.parse(timestamp);
-            Instant now = Instant.now();
-            long difference = Math.abs(now.getEpochSecond() - eventTime.getEpochSecond());
-            
-            if (difference > 300) { // 5 minutes tolerance
-                logger.warn("Timestamp too far from current time: {} (difference: {}s)", timestamp, difference);
-                sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Invalid timestamp");
-                return false;
-            }
-        } catch (DateTimeParseException e) {
-            logger.warn("Invalid timestamp format from {}: {}", clientIp, timestamp);
-            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Invalid timestamp format");
-            return false;
-        }
-        
-        return true;
-    }
-    
-    /**
-     * Validate HMAC signature using SHA-256
-     */
-    private boolean validateHmacSignature(String content, String signature, String timestamp) {
-        String cacheKey = content + "|" + signature + "|" + timestamp;
-        Boolean cached = hmacCache.get(cacheKey);
-        if (cached != null) {
-            return cached;
-        }
-        
-        try {
-            String secret = bridgeHandler.getWebhookSecret();
-            if (secret == null || secret.isEmpty()) {
-                logger.warn("Webhook secret not configured");
-                hmacCache.put(cacheKey, false);
-                return false;
-            }
-            
-            String payload = timestamp + content;
-            String expectedSignature = calculateHmac(payload, secret);
+            // Calculate HMAC-SHA256 of request body
+            String calculatedSignature = calculateHmacSha256(requestBody, secretKey);
             
             // Constant-time comparison to prevent timing attacks
-            boolean isValid = constantTimeEquals(signature, expectedSignature);
-            
-            hmacCache.put(cacheKey, isValid);
-            
-            if (!isValid) {
-                logger.debug("HMAC validation failed. Expected: {}, Received: {}", expectedSignature, signature);
-            }
-            
-            return isValid;
-            
+            return constantTimeEquals(calculatedSignature, signature);
         } catch (Exception e) {
-            logger.error("Error validating HMAC: {}", e.getMessage(), e);
-            hmacCache.put(cacheKey, false);
+            logger.warn("Error validating signature: {}", e.getMessage());
             return false;
         }
     }
-    
+
     /**
-     * Calculate HMAC-SHA256
+     * Get the secret key from bridge configuration
      */
-    private String calculateHmac(String payload, String secret) throws NoSuchAlgorithmException, InvalidKeyException {
-        Mac mac = Mac.getInstance("HmacSHA256");
-        SecretKeySpec secretKeySpec = new SecretKeySpec(secret.getBytes(), "HmacSHA256");
-        mac.init(secretKeySpec);
-        byte[] hash = mac.doFinal(payload.getBytes());
-        
-        // Convert to hex string
-        StringBuilder hexString = new StringBuilder();
-        for (byte b : hash) {
-            String hex = Integer.toHexString(0xff & b);
-            if (hex.length() == 1) {
-                hexString.append('0');
-            }
-            hexString.append(hex);
-        }
-        return hexString.toString();
+    private @Nullable String getSecretKey() {
+        // This would come from bridge configuration
+        // For now, implement a method in bridge handler to get it
+        return bridgeHandler.getBridgeConfiguration() != null ? 
+               bridgeHandler.getBridgeConfiguration().secretKey : null;
     }
-    
+
+    /**
+     * Calculate HMAC-SHA256 signature
+     */
+    private String calculateHmacSha256(String data, String key) {
+        try {
+            javax.crypto.Mac mac = javax.crypto.Mac.getInstance("HmacSHA256");
+            javax.crypto.spec.SecretKeySpec secretKeySpec = new javax.crypto.spec.SecretKeySpec(
+                key.getBytes(StandardCharsets.UTF_8), "HmacSHA256");
+            mac.init(secretKeySpec);
+            byte[] hash = mac.doFinal(data.getBytes(StandardCharsets.UTF_8));
+            
+            // Convert to hex string
+            StringBuilder hexString = new StringBuilder();
+            for (byte b : hash) {
+                String hex = Integer.toHexString(0xff & b);
+                if (hex.length() == 1) {
+                    hexString.append('0');
+                }
+                hexString.append(hex);
+            }
+            return hexString.toString();
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to calculate HMAC-SHA256", e);
+        }
+    }
+
     /**
      * Constant-time string comparison to prevent timing attacks
      */
@@ -267,69 +217,16 @@ public class RachioWebHookServlet extends HttpServlet {
         }
         return result == 0;
     }
-    
+
     /**
-     * Get client IP address, handling proxies
+     * Parse webhook event from JSON
      */
-    private String getClientIp(HttpServletRequest req) {
-        String ip = req.getHeader("X-Forwarded-For");
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getHeader("Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getHeader("WL-Proxy-Client-IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getHeader("HTTP_CLIENT_IP");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getHeader("HTTP_X_FORWARDED_FOR");
-        }
-        if (ip == null || ip.isEmpty() || "unknown".equalsIgnoreCase(ip)) {
-            ip = req.getRemoteAddr();
-        }
-        
-        // Handle multiple IPs in X-Forwarded-For
-        if (ip != null && ip.contains(",")) {
-            ip = ip.split(",")[0].trim();
-        }
-        
-        return Objects.requireNonNullElse(ip, "unknown");
-    }
-    
-    /**
-     * Send error response
-     */
-    private void sendError(HttpServletResponse resp, int status, String message) throws IOException {
-        resp.setStatus(status);
-        resp.setContentType("application/json");
-        PrintWriter writer = resp.getWriter();
-        writer.write("{\"error\":\"" + message + "\"}");
-        writer.flush();
-    }
-    
-    /**
-     * Process event asynchronously to avoid blocking the servlet thread
-     */
-    private void processEventAsync(RachioWebHookEvent event) {
-        bridgeHandler.getScheduler().execute(() -> {
-            try {
-                bridgeHandler.handleWebhookEvent(event);
-                logger.debug("Webhook event processed asynchronously: {}", event.getType());
-            } catch (Exception e) {
-                logger.error("Error processing webhook event asynchronously: {}", e.getMessage(), e);
-            }
-        });
-    }
-    
-    /**
-     * Clean up HMAC cache periodically
-     */
-    public void cleanupCache() {
-        int maxSize = 1000;
-        if (hmacCache.size() > maxSize) {
-            hmacCache.clear();
-            logger.debug("Cleared HMAC cache (size exceeded {})", maxSize);
+    private @Nullable RachioWebHookEvent parseWebhookEvent(String json) {
+        try {
+            return gson.fromJson(json, RachioWebHookEvent.class);
+        } catch (JsonSyntaxException e) {
+            logger.warn("Failed to parse webhook event JSON: {}", e.getMessage());
+            return null;
         }
     }
 }
