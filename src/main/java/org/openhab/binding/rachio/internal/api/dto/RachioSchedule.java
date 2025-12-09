@@ -1,37 +1,65 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.time.Instant;
-import java.util.List;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+import java.time.Instant;
+import java.util.List;
+import java.util.Map;
+
+/**
+ * DTO for Schedule Management
+ *
+ * @author David Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class RachioSchedule {
-    public @Nullable String id;
-    public @Nullable String name;
-    public @Nullable String type;
-    public @Nullable Boolean enabled;
-    public @Nullable Instant startDate;
-    public @Nullable Integer totalDuration;
-    public @Nullable List<ScheduleZone> zones;
+    @Nullable
+    public String id;
+    
+    @Nullable
+    public String name;
+    
+    @Nullable
+    public Boolean enabled;
+    
+    @Nullable
+    public String type; // FLEX_MONTHLY, FLEX_WEEKLY, FIXED
+    
+    @Nullable
+    public Instant startDate;
+    
+    @Nullable
+    public Integer totalDuration; // seconds
+    
+    @Nullable
+    public List<ScheduleZone> zones;
+    
+    @Nullable
+    public Map<String, Object> flexSettings; // flex schedule specific settings
+    
+    @Nullable
+    public Map<String, Object> weatherIntelligence; // weather adjustment settings
+    
+    @Override
+    public String toString() {
+        return "RachioSchedule [id=" + id + ", name=" + name + ", type=" + type + ", enabled=" + enabled + "]";
+    }
     
     @NonNullByDefault
     public static class ScheduleZone {
-        public @Nullable String zoneId;
-        public @Nullable Integer duration;
-        public @Nullable Integer order;
+        @Nullable
+        public String zoneId;
         
-        public @Nullable String getZoneId() { return zoneId; }
-        public @Nullable Integer getDuration() { return duration; }
-        public @Nullable Integer getOrder() { return order; }
+        @Nullable
+        public Integer duration; // seconds
+        
+        @Nullable
+        public Integer order;
+        
+        @Override
+        public String toString() {
+            return "ScheduleZone [zoneId=" + zoneId + ", duration=" + duration + "]";
+        }
     }
-    
-    public @Nullable String getId() { return id; }
-    public @Nullable String getName() { return name; }
-    public @Nullable String getType() { return type; }
-    public @Nullable Boolean isEnabled() { return enabled; }
-    public @Nullable Instant getStartDate() { return startDate; }
-    public @Nullable Integer getTotalDuration() { return totalDuration; }
-    public @Nullable List<ScheduleZone> getZones() { return zones; }
 }
