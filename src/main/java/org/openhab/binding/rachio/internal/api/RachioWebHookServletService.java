@@ -1,245 +1,335 @@
 package org.openhab.binding.rachio.internal.api;
 
-import java.io.IOException;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-
+import com.google.gson.Gson;
+import com.google.gson.GsonBuilder;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.rachio.internal.RachioBindingConstants;
 import org.openhab.binding.rachio.internal.handler.RachioBridgeHandler;
-import org.openhab.core.common.ThreadPoolManager;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.Gson;
-import com.google.gson.JsonSyntaxException;
+import javax.servlet.ServletException;
+import javax.servlet.http.HttpServlet;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.time.Instant;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 /**
- * Service for managing Rachio webhook registration and health checks
+ * The {@link RachioWebHookServletService} manages the webhook servlet for receiving
+ * real-time events from Rachio with async processing and health monitoring.
  *
- * @author Damion Boyett - Initial contribution
+ * @author David Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioWebHookServletService {
-    private static final String WEBHOOK_DESCRIPTION = "OpenHAB Rachio Binding";
-    private static final int WEBHOOK_HEALTH_CHECK_INTERVAL = 3600; // 1 hour in seconds
 
     private final Logger logger = LoggerFactory.getLogger(RachioWebHookServletService.class);
+    private final int port;
     private final RachioBridgeHandler bridgeHandler;
     private final Gson gson;
+    private final ExecutorService executorService;
     
-    private @Nullable ScheduledFuture<?> healthCheckFuture;
-    private @Nullable String registeredWebhookId;
-    private boolean webhookRegistered = false;
+    private @Nullable org.eclipse.jetty.servlet.ServletContextHandler contextHandler;
+    private @Nullable org.eclipse.jetty.server.Server server;
+    private volatile boolean isRunning = false;
+    
+    // Health monitoring
+    private long lastEventReceived = 0;
+    private long totalEventsReceived = 0;
+    private long totalEventsProcessed = 0;
 
-    public RachioWebHookServletService(RachioBridgeHandler bridgeHandler, Gson gson) {
+    public RachioWebHookServletService(int port, RachioBridgeHandler bridgeHandler) {
+        this.port = port;
         this.bridgeHandler = bridgeHandler;
-        this.gson = gson;
-    }
-
-    /**
-     * Initialize the webhook service
-     */
-    public void initialize() {
-        logger.debug("Initializing Rachio webhook service");
-        scheduleHealthCheck();
-    }
-
-    /**
-     * Dispose of the webhook service
-     */
-    public void dispose() {
-        logger.debug("Disposing Rachio webhook service");
         
-        // Cancel health check
-        ScheduledFuture<?> healthCheckFuture = this.healthCheckFuture;
-        if (healthCheckFuture != null && !healthCheckFuture.isCancelled()) {
-            healthCheckFuture.cancel(true);
-            this.healthCheckFuture = null;
+        // Configure Gson
+        GsonBuilder gsonBuilder = new GsonBuilder();
+        gsonBuilder.registerTypeAdapter(Instant.class, new InstantTypeAdapter());
+        this.gson = gsonBuilder.create();
+        
+        // Thread pool for async processing
+        this.executorService = Executors.newFixedThreadPool(2);
+        
+        logger.debug("WebHookServletService initialized on port {}", port);
+    }
+
+    public void start() throws Exception {
+        if (isRunning) {
+            logger.warn("Webhook service already running on port {}", port);
+            return;
         }
         
-        // Unregister webhook if registered
-        if (webhookRegistered) {
-            unregisterWebhook();
-        }
-    }
-
-    /**
-     * Register a webhook with Rachio API
-     * 
-     * @param http The RachioHttp client
-     * @param deviceId The device ID
-     * @param webhookUrl The webhook URL
-     * @param externalId An external ID for the webhook
-     */
-    public synchronized void registerWebhook(@Nullable RachioHttp http, String deviceId, String webhookUrl, String externalId) {
-        if (http == null) {
-            logger.warn("Cannot register webhook: HTTP client is null");
-            return;
-        }
-
-        if (webhookRegistered) {
-            logger.debug("Webhook already registered, skipping");
-            return;
-        }
-
         try {
-            logger.debug("Registering webhook for device {} with URL: {}", deviceId, webhookUrl);
+            server = new org.eclipse.jetty.server.Server(port);
+            contextHandler = new org.eclipse.jetty.servlet.ServletContextHandler(org.eclipse.jetty.servlet.ServletContextHandler.SESSIONS);
+            contextHandler.setContextPath("/");
             
-            // Create webhook registration request
-            String jsonRequest = String.format(
-                "{\"type\":\"WEBHOOK\",\"externalId\":\"%s\",\"url\":\"%s\",\"eventTypes\":[\"DEVICE_STATUS_EVENT\",\"ZONE_STATUS_EVENT\",\"RAIN_DELAY_EVENT\",\"WEATHER_INTELLIGENCE_EVENT\",\"WATER_BUDGET_EVENT\",\"SCHEDULE_STATUS_EVENT\",\"RAIN_SENSOR_DETECTION_EVENT\"],\"device\":[{\"id\":\"%s\"}]}",
-                externalId, webhookUrl, deviceId
-            );
-
-            String response = http.executePost("/webhook", jsonRequest);
+            // Register servlet
+            contextHandler.addServlet(new org.eclipse.jetty.servlet.ServletHolder(new RachioWebHookServlet()), RachioBindingConstants.WEBHOOK_PATH);
             
-            if (response != null && !response.isEmpty()) {
-                RachioApiWebHookEntry webhookEntry = gson.fromJson(response, RachioApiWebHookEntry.class);
-                if (webhookEntry != null && webhookEntry.id != null) {
-                    registeredWebhookId = webhookEntry.id;
-                    webhookRegistered = true;
-                    logger.info("Successfully registered webhook with ID: {}", registeredWebhookId);
-                } else {
-                    logger.warn("Failed to parse webhook registration response");
-                }
-            } else {
-                logger.warn("Empty response from webhook registration");
-            }
-        } catch (IOException e) {
-            logger.warn("Failed to register webhook: {}", e.getMessage(), e);
-        } catch (JsonSyntaxException e) {
-            logger.warn("Invalid JSON response from webhook registration: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Unregister a webhook from Rachio API
-     */
-    public synchronized void unregisterWebhook() {
-        if (!webhookRegistered || registeredWebhookId == null) {
-            logger.debug("No webhook registered or ID missing");
-            return;
-        }
-
-        try {
-            RachioHttp http = bridgeHandler.getRachioHttp();
-            if (http == null) {
-                logger.warn("Cannot unregister webhook: HTTP client is null");
-                return;
-            }
-
-            logger.debug("Unregistering webhook with ID: {}", registeredWebhookId);
+            server.setHandler(contextHandler);
+            server.start();
             
-            String response = http.executeDelete("/webhook/" + registeredWebhookId);
+            isRunning = true;
+            logger.info("Webhook service started on port {}", port);
             
-            if (response != null && !response.isEmpty()) {
-                logger.info("Successfully unregistered webhook with ID: {}", registeredWebhookId);
-                webhookRegistered = false;
-                registeredWebhookId = null;
-            } else {
-                logger.warn("Empty response from webhook unregistration");
-            }
-        } catch (IOException e) {
-            logger.warn("Failed to unregister webhook: {}", e.getMessage(), e);
+            // Register webhook with Rachio API
+            registerWebhookWithRachio();
+            
         } catch (Exception e) {
-            logger.warn("Error unregistering webhook: {}", e.getMessage(), e);
+            logger.error("Failed to start webhook service on port {}: {}", port, e.getMessage(), e);
+            throw e;
         }
     }
 
-    /**
-     * Check webhook health and re-register if needed
-     * 
-     * @param http The RachioHttp client
-     */
-    public synchronized void checkWebhookHealth(@Nullable RachioHttp http) {
-        if (http == null) {
-            logger.warn("Cannot check webhook health: HTTP client is null");
+    public void stop() {
+        if (!isRunning) {
             return;
         }
-
+        
         try {
-            // List webhooks to check if ours is still registered
-            String response = http.executeGet("/webhook");
+            // Unregister webhook from Rachio API
+            unregisterWebhookFromRachio();
             
-            if (response != null && !response.isEmpty()) {
-                RachioApiWebHookList webhookList = gson.fromJson(response, RachioApiWebHookList.class);
+            if (server != null) {
+                server.stop();
+                server = null;
+            }
+            
+            if (contextHandler != null) {
+                contextHandler.stop();
+                contextHandler = null;
+            }
+            
+            executorService.shutdown();
+            
+            isRunning = false;
+            logger.info("Webhook service stopped");
+            
+        } catch (Exception e) {
+            logger.error("Error stopping webhook service: {}", e.getMessage(), e);
+        }
+    }
+
+    private void registerWebhookWithRachio() {
+        try {
+            String callbackUrl = getCallbackUrl();
+            String externalId = "openhab-" + System.currentTimeMillis();
+            
+            RachioHttp rachioHttp = bridgeHandler.getRachioHttp();
+            if (rachioHttp != null) {
+                // Clear existing webhooks if configured
+                if (bridgeHandler.getBridgeConfiguration().clearAllCallbacks != null && 
+                    bridgeHandler.getBridgeConfiguration().clearAllCallbacks) {
+                    rachioHttp.deleteAllWebhooks();
+                    logger.debug("Cleared existing webhooks");
+                }
                 
-                boolean found = false;
-                if (webhookList != null && webhookList.data != null) {
-                    for (RachioApiWebHookEntry entry : webhookList.data) {
-                        if (registeredWebhookId != null && registeredWebhookId.equals(entry.id)) {
-                            found = true;
+                // Register new webhook
+                boolean success = rachioHttp.registerWebhook(callbackUrl, externalId);
+                if (success) {
+                    logger.info("Registered webhook with Rachio: {}", callbackUrl);
+                } else {
+                    logger.warn("Failed to register webhook with Rachio");
+                }
+            }
+            
+        } catch (Exception e) {
+            logger.error("Error registering webhook with Rachio: {}", e.getMessage(), e);
+        }
+    }
+
+    private void unregisterWebhookFromRachio() {
+        try {
+            RachioHttp rachioHttp = bridgeHandler.getRachioHttp();
+            if (rachioHttp != null) {
+                rachioHttp.deleteAllWebhooks();
+                logger.debug("Unregistered webhooks from Rachio");
+            }
+        } catch (Exception e) {
+            logger.error("Error unregistering webhook from Rachio: {}", e.getMessage(), e);
+        }
+    }
+
+    private String getCallbackUrl() {
+        String callbackUrl = bridgeHandler.getBridgeConfiguration().callbackUrl;
+        if (callbackUrl != null && !callbackUrl.isEmpty()) {
+            return callbackUrl;
+        }
+        
+        // Auto-detect callback URL
+        // In production, this would use network interfaces to determine external IP
+        return "http://" + getLocalIp() + ":" + port + RachioBindingConstants.WEBHOOK_PATH;
+    }
+
+    private String getLocalIp() {
+        try {
+            // Simplified - in production, use proper network detection
+            return java.net.InetAddress.getLocalHost().getHostAddress();
+        } catch (Exception e) {
+            return "127.0.0.1";
+        }
+    }
+
+    public boolean isRunning() {
+        return isRunning;
+    }
+
+    public int getPort() {
+        return port;
+    }
+
+    public Map<String, Object> getHealthStatus() {
+        Map<String, Object> status = new HashMap<>();
+        status.put("running", isRunning);
+        status.put("port", port);
+        status.put("lastEventReceived", lastEventReceived > 0 ? Instant.ofEpochMilli(lastEventReceived).toString() : "never");
+        status.put("totalEventsReceived", totalEventsReceived);
+        status.put("totalEventsProcessed", totalEventsProcessed);
+        status.put("callbackUrl", getCallbackUrl());
+        return status;
+    }
+
+    // Inner Servlet class
+    @NonNullByDefault
+    private class RachioWebHookServlet extends HttpServlet {
+        
+        @Override
+        protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+            totalEventsReceived++;
+            lastEventReceived = System.currentTimeMillis();
+            
+            // Get client IP (with proxy support)
+            String clientIp = req.getHeader("X-Forwarded-For");
+            if (clientIp == null || clientIp.isEmpty()) {
+                clientIp = req.getRemoteAddr();
+            }
+            
+            // Get HMAC signature
+            String signature = req.getHeader("X-Rachio-Signature");
+            
+            // Read request body
+            StringBuilder payloadBuilder = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(new InputStreamReader(req.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    payloadBuilder.append(line);
+                }
+            }
+            
+            String payload = payloadBuilder.toString();
+            logger.debug("Received webhook from {}: {}", clientIp, payload.length() > 100 ? payload.substring(0, 100) + "..." : payload);
+            
+            // Validate HMAC signature (if security enabled)
+            RachioSecurity security = bridgeHandler.getSecurity();
+            if (security != null) {
+                String apiKey = bridgeHandler.getBridgeConfiguration().apiKey;
+                if (!security.validateHmacSignature(payload, signature, apiKey)) {
+                    logger.warn("Invalid HMAC signature from {}", clientIp);
+                    resp.sendError(HttpServletResponse.SC_UNAUTHORIZED, "Invalid signature");
+                    return;
+                }
+            }
+            
+            // Validate IP (if IP filtering enabled)
+            if (security != null && bridgeHandler.getBridgeConfiguration().ipFilter != null) {
+                if (!security.isIpAllowed(clientIp, bridgeHandler)) {
+                    logger.warn("IP denied: {}", clientIp);
+                    resp.sendError(HttpServletResponse.SC_FORBIDDEN, "IP not allowed");
+                    return;
+                }
+            }
+            
+            // Process event asynchronously
+            executorService.submit(() -> processWebhookEvent(payload));
+            
+            // Send immediate response
+            resp.setStatus(HttpServletResponse.SC_OK);
+            resp.setContentType("application/json");
+            resp.getWriter().write("{\"status\":\"received\"}");
+            resp.getWriter().flush();
+            
+            logger.debug("Webhook processed successfully");
+        }
+        
+        @Override
+        protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+            // Health check endpoint
+            Map<String, Object> health = getHealthStatus();
+            resp.setContentType("application/json");
+            resp.getWriter().write(gson.toJson(health));
+            resp.getWriter().flush();
+        }
+        
+        private void processWebhookEvent(String payload) {
+            try {
+                totalEventsProcessed++;
+                
+                // Parse the webhook event
+                RachioWebHookEvent event = gson.fromJson(payload, RachioWebHookEvent.class);
+                if (event == null) {
+                    logger.warn("Failed to parse webhook event");
+                    return;
+                }
+                
+                logger.debug("Processing webhook event: type={}, deviceId={}", event.eventType, event.deviceId);
+                
+                // Extract data from event
+                Map<String, Object> data = extractEventData(event);
+                
+                // Forward to bridge handler
+                bridgeHandler.handleWebhookEvent(event.eventType, event.deviceId, event.zoneId, data);
+                
+                logger.debug("Webhook event processed successfully");
+                
+            } catch (Exception e) {
+                logger.error("Error processing webhook event: {}", e.getMessage(), e);
+            }
+        }
+        
+        private Map<String, Object> extractEventData(RachioWebHookEvent event) {
+            Map<String, Object> data = new HashMap<>();
+            
+            // Add common fields
+            if (event.eventType != null) data.put("eventType", event.eventType);
+            if (event.deviceId != null) data.put("deviceId", event.deviceId);
+            if (event.zoneId != null) data.put("zoneId", event.zoneId);
+            if (event.timestamp != null) data.put("timestamp", event.timestamp.toString());
+            
+            // Add event-specific data
+            if (event.data != null) {
+                data.putAll(event.data);
+            }
+            
+            // Extract zone/device info from summary if available
+            if (event.summary != null) {
+                data.put("summary", event.summary);
+                
+                // Try to extract zone number from summary
+                if (event.summary.contains("Zone")) {
+                    String[] parts = event.summary.split(" ");
+                    for (String part : parts) {
+                        try {
+                            int zoneNum = Integer.parseInt(part);
+                            data.put("zoneNumber", zoneNum);
                             break;
+                        } catch (NumberFormatException e) {
+                            // Not a number, continue
                         }
                     }
                 }
-                
-                if (!found) {
-                    logger.warn("Registered webhook not found, attempting to re-register");
-                    webhookRegistered = false;
-                    registeredWebhookId = null;
-                    
-                    // Get current configuration
-                    String deviceId = bridgeHandler.getDeviceId();
-                    String webhookUrl = bridgeHandler.getWebhookUrl();
-                    
-                    if (deviceId != null && webhookUrl != null) {
-                        registerWebhook(http, deviceId, webhookUrl, bridgeHandler.getThing().getUID().getId());
-                    }
-                } else {
-                    logger.debug("Webhook health check passed");
-                }
             }
-        } catch (IOException e) {
-            logger.warn("Failed to check webhook health: {}", e.getMessage(), e);
-        } catch (JsonSyntaxException e) {
-            logger.warn("Invalid JSON response from webhook health check: {}", e.getMessage(), e);
+            
+            return data;
         }
-    }
-
-    /**
-     * Schedule periodic webhook health checks
-     */
-    private void scheduleHealthCheck() {
-        healthCheckFuture = ThreadPoolManager.getScheduledPool("rachio-webhook-health")
-            .scheduleWithFixedDelay(this::performHealthCheck, 
-                WEBHOOK_HEALTH_CHECK_INTERVAL, 
-                WEBHOOK_HEALTH_CHECK_INTERVAL, 
-                TimeUnit.SECONDS);
-        
-        logger.debug("Scheduled webhook health checks every {} seconds", WEBHOOK_HEALTH_CHECK_INTERVAL);
-    }
-
-    /**
-     * Perform a webhook health check
-     */
-    private void performHealthCheck() {
-        try {
-            RachioHttp http = bridgeHandler.getRachioHttp();
-            if (http != null) {
-                checkWebhookHealth(http);
-            }
-        } catch (Exception e) {
-            logger.warn("Error performing webhook health check: {}", e.getMessage(), e);
-        }
-    }
-
-    /**
-     * Check if a webhook is registered
-     * 
-     * @return true if webhook is registered
-     */
-    public boolean isWebhookRegistered() {
-        return webhookRegistered;
-    }
-
-    /**
-     * Get the registered webhook ID
-     * 
-     * @return the webhook ID or null if not registered
-     */
-    public @Nullable String getRegisteredWebhookId() {
-        return registeredWebhookId;
     }
 }
