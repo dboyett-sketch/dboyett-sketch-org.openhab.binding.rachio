@@ -1,50 +1,41 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.util.List;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+import java.time.Instant;
+
 /**
- * Represents device event summary from Rachio API
+ * DTO for Rachio Event Summary
+ *
+ * @author David Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioEventSummary {
-    public String deviceId = "";
-    public String status = "";
     @Nullable
-    public List<ZoneSummary> zoneData;
+    public String id;
+    
     @Nullable
-    public List<Event> events;
+    public String deviceId;
     
-    public static class ZoneSummary {
-        public String zoneId = "";
-        public String name = "";
-        public boolean enabled;
-        public int runtime;
-        public String imageUrl = "";
-    }
+    @Nullable
+    public String zoneId;
     
-    public static class Event {
-        public String id = "";
-        public String type = "";
-        public String timestamp = "";
-        public String summary = "";
-        @Nullable
-        public EventDevice device;
-        @Nullable
-        public EventZone zone;
-    }
+    @Nullable
+    public String eventType;
     
-    public static class EventDevice {
-        public String id = "";
-        public String name = "";
-        public boolean on;
-    }
+    @Nullable
+    public Instant timestamp;
     
-    public static class EventZone {
-        public String id = "";
-        public String name = "";
-        public int zoneNumber;
-        public int duration;
+    @Nullable
+    public String summary;
+    
+    @Nullable
+    public Map<String, Object> details;
+    
+    @Override
+    public String toString() {
+        return "RachioEventSummary [eventType=" + eventType + ", deviceId=" + deviceId + 
+               ", timestamp=" + timestamp + "]";
     }
 }
