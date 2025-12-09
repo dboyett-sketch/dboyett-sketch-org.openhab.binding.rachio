@@ -14,6 +14,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Future;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -456,7 +457,7 @@ public class RachioBridgeHandler extends BaseBridgeHandler {
     /**
      * Get scheduler for scheduling tasks
      */
-    public org.openhab.core.scheduler.ScheduledExecutorService getScheduler() {
+    public ScheduledExecutorService getScheduler() {
         return scheduler;
     }
 }
