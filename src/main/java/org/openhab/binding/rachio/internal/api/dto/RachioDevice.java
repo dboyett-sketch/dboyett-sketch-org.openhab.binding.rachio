@@ -1,5 +1,6 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
+import java.time.Instant;
 import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
@@ -7,117 +8,125 @@ import org.eclipse.jdt.annotation.Nullable;
 
 import com.google.gson.annotations.SerializedName;
 
+/**
+ * DTO for Rachio device
+ *
+ * @author Damion Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class RachioDevice {
-    @SerializedName("id")
-    private String id = "";
-
-    @SerializedName("name")
-    private String name = "";
-
-    @SerializedName("status")
-    private String status = "";
-
+    public @Nullable String id;
+    public @Nullable String name;
+    public @Nullable String model;
+    
     @SerializedName("serialNumber")
-    private String serialNumber = "";
-
-    @SerializedName("model")
-    private String model = "";
-
+    public @Nullable String serialNumber;
+    
+    @SerializedName("macAddress")
+    public @Nullable String macAddress;
+    
+    public @Nullable String status;
+    
+    @SerializedName("rainDelay")
+    public @Nullable Integer rainDelay;
+    
+    @SerializedName("rainDelayExpirationDate")
+    public @Nullable Instant rainDelayExpirationDate;
+    
     @SerializedName("zones")
-    private List<RachioZone> zones = List.of();
-
-    @SerializedName("on")
-    private boolean on = false;
-
-    @SerializedName("scheduleRules")
-    @Nullable
-    private List<Object> scheduleRules;
-
+    public @Nullable List<RachioZone> zones;
+    
+    @SerializedName("createdDate")
+    public @Nullable Instant createdDate;
+    
+    @SerializedName("updatedDate")
+    public @Nullable Instant updatedDate;
+    
+    // Professional irrigation data
+    @SerializedName("elevation")
+    public @Nullable Double elevation;
+    
     @SerializedName("flexScheduleRules")
-    @Nullable
-    private List<Object> flexScheduleRules;
-
+    public @Nullable Boolean flexScheduleRules;
+    
     @SerializedName("latitude")
-    private double latitude = 0.0;
-
+    public @Nullable Double latitude;
+    
     @SerializedName("longitude")
-    private double longitude = 0.0;
-
+    public @Nullable Double longitude;
+    
     @SerializedName("timeZone")
-    private String timeZone = "";
-
-    @SerializedName("createdAt")
-    private long createdAt = 0;
-
-    @SerializedName("updatedAt")
-    private long updatedAt = 0;
-
+    public @Nullable String timeZone;
+    
     @SerializedName("scheduleModeType")
-    @Nullable
-    private String scheduleModeType;
-
-    // Getters
-    public String getId() {
+    public @Nullable String scheduleModeType;
+    
+    // Getters for compatibility with existing code
+    public @Nullable String getId() {
         return id;
     }
-
-    public String getName() {
+    
+    public @Nullable String getName() {
         return name;
     }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public String getSerialNumber() {
-        return serialNumber;
-    }
-
-    public String getModel() {
+    
+    public @Nullable String getModel() {
         return model;
     }
-
-    public List<RachioZone> getZones() {
+    
+    public @Nullable String getSerialNumber() {
+        return serialNumber;
+    }
+    
+    public @Nullable String getMacAddress() {
+        return macAddress;
+    }
+    
+    public @Nullable String getStatus() {
+        return status;
+    }
+    
+    public @Nullable Integer getRainDelay() {
+        return rainDelay;
+    }
+    
+    public @Nullable Instant getRainDelayExpirationDate() {
+        return rainDelayExpirationDate;
+    }
+    
+    public @Nullable List<RachioZone> getZones() {
         return zones;
     }
-
-    public boolean isOn() {
-        return on;
+    
+    public @Nullable Instant getCreatedDate() {
+        return createdDate;
     }
-
-    @Nullable
-    public List<Object> getScheduleRules() {
-        return scheduleRules;
+    
+    public @Nullable Instant getUpdatedDate() {
+        return updatedDate;
     }
-
-    @Nullable
-    public List<Object> getFlexScheduleRules() {
+    
+    public @Nullable Double getElevation() {
+        return elevation;
+    }
+    
+    public @Nullable Boolean isFlexScheduleRules() {
         return flexScheduleRules;
     }
-
-    public double getLatitude() {
+    
+    public @Nullable Double getLatitude() {
         return latitude;
     }
-
-    public double getLongitude() {
+    
+    public @Nullable Double getLongitude() {
         return longitude;
     }
-
-    public String getTimeZone() {
+    
+    public @Nullable String getTimeZone() {
         return timeZone;
     }
-
-    public long getCreatedAt() {
-        return createdAt;
-    }
-
-    public long getUpdatedAt() {
-        return updatedAt;
-    }
-
-    @Nullable
-    public String getScheduleModeType() {
+    
+    public @Nullable String getScheduleModeType() {
         return scheduleModeType;
     }
 }
