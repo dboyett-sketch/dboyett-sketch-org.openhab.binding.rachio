@@ -15,7 +15,6 @@ import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
-import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.thing.binding.builder.ChannelBuilder;
 import org.openhab.core.thing.type.ChannelTypeUID;
 import org.openhab.core.types.Command;
@@ -28,6 +27,7 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.util.Map;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -38,20 +38,12 @@ import java.util.concurrent.TimeUnit;
  * @author David Boyett - Initial contribution
  */
 @NonNullByDefault
-public class RachioDeviceHandler extends BaseThingHandler implements RachioStatusListener {
+public class RachioDeviceHandler extends RachioHandler {
 
-    private final Logger logger = LoggerFactory.getLogger(RachioDeviceHandler.class);
-    
     private RachioDeviceConfiguration config = new RachioDeviceConfiguration();
-    private @Nullable RachioHttp rachioHttp;
-    private @Nullable RachioBridgeHandler bridgeHandler;
-    private @Nullable ScheduledFuture<?> refreshJob;
     private @Nullable RachioDevice deviceData;
     
-    // Rate limiting tracking
-    private int rateLimitRemaining = 100;
-    private int rateLimitLimit = 100;
-    private @Nullable Instant rateLimitReset;
+    // Rate limiting tracking inherited from parent
 
     public RachioDeviceHandler(Thing thing) {
         super(thing);
@@ -63,7 +55,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         logger.debug("Received command {} for channel {}", command, channelUID);
         
         if (command instanceof RefreshType) {
-            refresh();
+            handleRefreshCommand(channelUID);
             return;
         }
         
@@ -126,7 +118,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         createDynamicChannels();
         
         // Schedule initial refresh
-        scheduler.schedule(this::refresh, 2, TimeUnit.SECONDS);
+        scheduleRefresh(2);
         
         updateStatus(ThingStatus.ONLINE);
         logger.info("Rachio device handler initialized for device: {}", config.deviceId);
@@ -142,10 +134,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         }
         
         // Stop refresh job
-        if (refreshJob != null && !refreshJob.isCancelled()) {
-            refreshJob.cancel(true);
-            refreshJob = null;
-        }
+        cancelRefreshJob();
         
         super.dispose();
     }
@@ -207,7 +196,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
         }
         
         // Trigger refresh to get updated data
-        scheduler.schedule(this::refresh, 1, TimeUnit.SECONDS);
+        scheduleRefresh(1);
     }
 
     private void createDynamicChannels() {
@@ -228,40 +217,24 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
             "DateTime", "rateLimit");
     }
 
-    private void createChannelIfMissing(String channelId, String itemType, String category) {
-        if (thing.getChannel(channelId) == null) {
-            ChannelUID channelUID = new ChannelUID(thing.getUID(), channelId);
-            ChannelTypeUID channelTypeUID = new ChannelTypeUID(RachioBindingConstants.BINDING_ID, 
-                channelId.toLowerCase());
-            
-            Channel channel = ChannelBuilder.create(channelUID, itemType)
-                .withType(channelTypeUID)
-                .withLabel(channelId)
-                .withDescription("Dynamic channel for " + channelId)
-                .withCategory(category)
-                .build();
-            
-            updateThing(editThing().withChannel(channel).build());
-            logger.debug("Created dynamic channel: {}", channelId);
-        }
-    }
-
     private void updateDeviceChannels(RachioDevice device) {
         logger.debug("Updating channels for device: {}", device.name);
         
         // Update basic device info
-        updateProperty(RachioBindingConstants.PROPERTY_NAME, device.name);
-        updateProperty(RachioBindingConstants.PROPERTY_MODEL, device.model);
+        updatePropertyIfChanged(RachioBindingConstants.PROPERTY_NAME, device.name);
+        updatePropertyIfChanged(RachioBindingConstants.PROPERTY_MODEL, device.model);
         
         // Update device status channels
-        updateState(RachioBindingConstants.CHANNEL_DEVICE_STATUS, 
-            new StringType(device.status != null ? device.status : RachioBindingConstants.UNKNOWN));
-        
-        updateState(RachioBindingConstants.CHANNEL_DEVICE_ONLINE, 
-            OnOffType.from(RachioBindingConstants.DEVICE_STATUS_ONLINE.equals(device.status)));
+        if (device.status != null) {
+            updateState(RachioBindingConstants.CHANNEL_DEVICE_STATUS, 
+                new StringType(device.status));
+            
+            updateState(RachioBindingConstants.CHANNEL_DEVICE_ONLINE, 
+                OnOffType.from(RachioBindingConstants.DEVICE_STATUS_ONLINE.equals(device.status)));
+        }
         
         // Update rain delay
-        boolean rainDelayActive = device.rainDelay > 0;
+        boolean rainDelayActive = device.rainDelay != null && device.rainDelay > 0;
         updateState(RachioBindingConstants.CHANNEL_DEVICE_RAIN_DELAY, 
             OnOffType.from(rainDelayActive));
         
@@ -279,61 +252,18 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
             updateState(RachioBindingConstants.CHANNEL_DEVICE_SCHEDULE_MODE, 
                 new StringType(device.scheduleMode));
         }
-    }
-
-    private void updateRateLimitChannels() {
-        if (rachioHttp == null) {
-            return;
+        
+        // Update professional monitoring fields if available
+        if (device.waterBudget != null) {
+            updateState("waterBudget", new DecimalType(device.waterBudget));
         }
         
-        // Get rate limit info from HTTP client
-        Map<String, String> rateLimits = rachioHttp.getRateLimits();
-        if (rateLimits != null) {
-            try {
-                String remainingStr = rateLimits.get(RachioBindingConstants.HEADER_RATE_LIMIT_REMAINING);
-                String limitStr = rateLimits.get(RachioBindingConstants.HEADER_RATE_LIMIT_LIMIT);
-                String resetStr = rateLimits.get(RachioBindingConstants.HEADER_RATE_LIMIT_RESET);
-                
-                if (remainingStr != null) {
-                    rateLimitRemaining = Integer.parseInt(remainingStr);
-                    updateState(RachioBindingConstants.CHANNEL_RATE_LIMIT_REMAINING, 
-                        new DecimalType(rateLimitRemaining));
-                }
-                
-                if (limitStr != null) {
-                    rateLimitLimit = Integer.parseInt(limitStr);
-                    if (rateLimitLimit > 0) {
-                        double percentUsed = ((double) (rateLimitLimit - rateLimitRemaining) / rateLimitLimit) * 100;
-                        updateState(RachioBindingConstants.CHANNEL_RATE_LIMIT_PERCENT, 
-                            new DecimalType(percentUsed));
-                    }
-                }
-                
-                if (resetStr != null) {
-                    long resetTime = Long.parseLong(resetStr);
-                    rateLimitReset = Instant.ofEpochSecond(resetTime);
-                    ZonedDateTime resetDateTime = ZonedDateTime.ofInstant(rateLimitReset, ZoneId.systemDefault());
-                    updateState(RachioBindingConstants.CHANNEL_RATE_LIMIT_RESET, 
-                        new DateTimeType(resetDateTime));
-                }
-                
-                // Update status based on rate limits
-                String status = getRateLimitStatus();
-                updateState(RachioBindingConstants.CHANNEL_RATE_LIMIT_STATUS, new StringType(status));
-                
-            } catch (NumberFormatException e) {
-                logger.warn("Error parsing rate limit values: {}", e.getMessage());
-            }
+        if (device.totalWaterUsage != null) {
+            updateState("totalWaterUsage", new DecimalType(device.totalWaterUsage));
         }
-    }
-
-    private String getRateLimitStatus() {
-        if (rateLimitRemaining <= RachioBindingConstants.RATE_LIMIT_CRITICAL_THRESHOLD) {
-            return "CRITICAL";
-        } else if (rateLimitRemaining <= RachioBindingConstants.RATE_LIMIT_WARNING_THRESHOLD) {
-            return "WARNING";
-        } else {
-            return "OK";
+        
+        if (device.waterSavings != null) {
+            updateState("waterSavings", new DecimalType(device.waterSavings));
         }
     }
 
@@ -355,7 +285,7 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
             }
             
             // Refresh after command
-            scheduler.schedule(this::refresh, 2, TimeUnit.SECONDS);
+            scheduleRefresh(2);
             
         } catch (Exception e) {
             logger.error("Error handling rain delay command: {}", e.getMessage(), e);
@@ -365,6 +295,8 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
     private void handleScheduleModeCommand(String mode) {
         logger.debug("Setting schedule mode to: {}", mode);
         // TODO: Implement schedule mode change via API
+        // For now, just update the channel state
+        updateState(RachioBindingConstants.CHANNEL_DEVICE_SCHEDULE_MODE, new StringType(mode));
     }
 
     private void handleDeviceStatusEvent(@Nullable Map<String, Object> data) {
@@ -399,17 +331,5 @@ public class RachioDeviceHandler extends BaseThingHandler implements RachioStatu
                 new StringType((String) scheduleMode));
             logger.debug("Updated schedule mode from webhook: {}", scheduleMode);
         }
-    }
-
-    private @Nullable RachioBridgeHandler getBridgeHandler() {
-        if (getBridge() == null) {
-            return null;
-        }
-        return (RachioBridgeHandler) getBridge().getHandler();
-    }
-
-    @Override
-    public Thing getThing() {
-        return super.getThing();
     }
 }
