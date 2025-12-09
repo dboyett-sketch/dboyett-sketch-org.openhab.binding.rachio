@@ -342,11 +342,4 @@ public class RachioHttp {
     public @Nullable String getDeviceSchedules(String deviceId) throws IOException {
         return executeGet("/device/" + deviceId + "/schedule");
     }
-
-    /**
-     * Get zone schedules
-     */
-    public @Nullable String getZoneSchedules(String zoneId) throws IOException {
-        return executeGet("/zone/" + zoneId + "/schedule");
-    }
 }
