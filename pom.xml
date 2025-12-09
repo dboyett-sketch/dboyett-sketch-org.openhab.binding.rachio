@@ -20,36 +20,32 @@
     
     <properties>
         <gson.version>2.10.1</gson.version>
-        <jetty.version>11.0.20</jetty.version>
         <servlet-api.version>4.0.1</servlet-api.version>
     </properties>
     
     <!-- MINIMAL dependencies - parent provides OpenHAB core -->
     <dependencies>
-        <!-- Gson is NOT in the parent BOM, so include it -->
+        <!-- Gson for JSON parsing -->
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>${gson.version}</version>
+            <scope>provided</scope>
         </dependency>
         
-        <!-- Jetty HTTP Client (for your HttpClient usage) -->
-        <dependency>
-            <groupId>org.eclipse.jetty</groupId>
-            <artifactId>jetty-client</artifactId>
-            <version>${jetty.version}</version>
-        </dependency>
-        <dependency>
-            <groupId>org.eclipse.jetty</groupId>
-            <artifactId>jetty-http</artifactId>
-            <version>${jetty.version}</version>
-        </dependency>
-        
-        <!-- Servlet API for webhooks -->
+        <!-- Servlet API for webhooks (provided by OpenHAB) -->
         <dependency>
             <groupId>javax.servlet</groupId>
             <artifactId>javax.servlet-api</artifactId>
             <version>${servlet-api.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        
+        <!-- OSGi Component Annotations -->
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.component.annotations</artifactId>
+            <version>1.5.0</version>
             <scope>provided</scope>
         </dependency>
     </dependencies>
@@ -70,17 +66,21 @@
                         <Bundle-Version>${project.version}</Bundle-Version>
                         <Bundle-Category>binding</Bundle-Category>
                         
+                        <!-- Important: Don't import Jetty packages since we're using Java HttpClient -->
                         <Import-Package>
                             org.openhab.core.*;version="[5.0,6)",
-                            org.eclipse.jetty.client.api,
-                            org.eclipse.jetty.client.util,
-                            org.eclipse.jetty.http,
-                            org.eclipse.jetty.util,
-                            org.eclipse.jetty.util.ssl,
-                            com.google.gson,
+                            com.google.gson;version="[2.8,3)",
                             com.google.gson.reflect,
                             javax.servlet,
                             javax.servlet.http,
+                            org.osgi.service.component.annotations;version="[1.5,2)",
+                            org.osgi.service.http,
+                            *
+                        </Import-Package>
+                        
+                        <!-- Don't import optional packages -->
+                        <Import-Package>
+                            !org.eclipse.jetty.*,
                             *
                         </Import-Package>
                         
@@ -89,6 +89,10 @@
                         </Export-Package>
                         
                         <_dsannotations>*</_dsannotations>
+                        
+                        <!-- Don't embed any dependencies -->
+                        <Embed-Dependency>!*</Embed-Dependency>
+                        <Embed-Transitive>false</Embed-Transitive>
                     </instructions>
                 </configuration>
             </plugin>
