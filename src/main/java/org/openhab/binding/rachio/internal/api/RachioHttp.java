@@ -17,7 +17,7 @@ import org.slf4j.LoggerFactory;
 import com.google.gson.Gson;
 
 /**
- * HTTP client for Rachio API communication
+ * HTTP client for Rachio API communication using Java's HttpClient
  *
  * @author Damion Boyett - Initial contribution
  */
@@ -36,6 +36,9 @@ public class RachioHttp {
     private int rateLimitReset = 3600;
     private long lastRequestTime = 0;
 
+    /**
+     * Constructor for Java HttpClient
+     */
     public RachioHttp(String apiKey, HttpClient httpClient, Gson gson) {
         this.apiKey = apiKey;
         this.httpClient = httpClient;
@@ -44,10 +47,14 @@ public class RachioHttp {
 
     /**
      * Constructor with HttpClientFactory for compatibility
+     * Creates Java HttpClient with HTTP/2 support
      */
     public RachioHttp(String apiKey, HttpClientFactory httpClientFactory, Gson gson) {
         this.apiKey = apiKey;
-        this.httpClient = httpClientFactory.getCommonHttpClient();
+        this.httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_2)
+            .connectTimeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS))
+            .build();
         this.gson = gson;
     }
 
@@ -334,5 +341,12 @@ public class RachioHttp {
      */
     public @Nullable String getDeviceSchedules(String deviceId) throws IOException {
         return executeGet("/device/" + deviceId + "/schedule");
+    }
+
+    /**
+     * Get zone schedules
+     */
+    public @Nullable String getZoneSchedules(String zoneId) throws IOException {
+        return executeGet("/zone/" + zoneId + "/schedule");
     }
 }
