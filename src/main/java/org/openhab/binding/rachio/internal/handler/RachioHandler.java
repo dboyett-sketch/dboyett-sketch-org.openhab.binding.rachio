@@ -61,7 +61,11 @@ public abstract class RachioHandler extends BaseThingHandler implements RachioSt
     public abstract void initialize();
 
     @Override
-    public abstract void dispose();
+    public void dispose() {
+        // Default implementation
+        cancelRefreshJob();
+        super.dispose();
+    }
 
     @Override
     public abstract void handleCommand(ChannelUID channelUID, Command command);
