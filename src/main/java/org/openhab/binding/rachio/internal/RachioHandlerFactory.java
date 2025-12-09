@@ -53,13 +53,13 @@ public class RachioHandlerFactory extends BaseThingHandlerFactory {
 
         if (THING_TYPE_BRIDGE.equals(thingTypeUID)) {
             logger.debug("Creating RachioBridgeHandler");
-            return new RachioBridgeHandler((Bridge) thing, httpClientFactory);
+            return new org.openhab.binding.rachio.internal.handler.RachioBridgeHandler((Bridge) thing, httpClientFactory);
         } else if (THING_TYPE_DEVICE.equals(thingTypeUID)) {
             logger.debug("Creating RachioDeviceHandler");
-            return new RachioDeviceHandler(thing);
+            return new org.openhab.binding.rachio.internal.handler.RachioDeviceHandler(thing);
         } else if (THING_TYPE_ZONE.equals(thingTypeUID)) {
             logger.debug("Creating RachioZoneHandler");
-            return new RachioZoneHandler(thing);
+            return new org.openhab.binding.rachio.internal.handler.RachioZoneHandler(thing);
         }
 
         logger.warn("Unknown thing type: {}", thingTypeUID);
