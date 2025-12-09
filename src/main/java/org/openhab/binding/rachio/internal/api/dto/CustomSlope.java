@@ -3,11 +3,27 @@ package org.openhab.binding.rachio.internal.api.dto;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+/**
+ * DTO for Custom Slope data
+ *
+ * @author David Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class CustomSlope {
-    public @Nullable String id;
-    public @Nullable String name;
+    @Nullable
+    public String id;
     
-    public @Nullable String getId() { return id; }
-    public @Nullable String getName() { return name; }
+    @Nullable
+    public String name; // FLAT, MODERATE, STEEP, etc.
+    
+    @Nullable
+    public Double percent; // slope percentage
+    
+    @Nullable
+    public String description;
+    
+    @Override
+    public String toString() {
+        return "CustomSlope [name=" + name + ", percent=" + percent + "]";
+    }
 }
