@@ -4,12 +4,7 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.rachio.internal.RachioBindingConstants;
 import org.openhab.binding.rachio.internal.api.RachioHttp;
-import org.openhab.binding.rachio.internal.api.dto.CustomCrop;
-import org.openhab.binding.rachio.internal.api.dto.CustomNozzle;
-import org.openhab.binding.rachio.internal.api.dto.CustomShade;
-import org.openhab.binding.rachio.internal.api.dto.CustomSlope;
-import org.openhab.binding.rachio.internal.api.dto.CustomSoil;
-import org.openhab.binding.rachio.internal.api.dto.RachioZone;
+import org.openhab.binding.rachio.internal.api.dto.*;
 import org.openhab.binding.rachio.internal.config.RachioZoneConfiguration;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
@@ -19,7 +14,6 @@ import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
-import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.thing.binding.builder.ChannelBuilder;
 import org.openhab.core.thing.type.ChannelTypeUID;
 import org.openhab.core.types.Command;
@@ -39,13 +33,9 @@ import java.util.concurrent.TimeUnit;
  * @author David Boyett - Initial contribution
  */
 @NonNullByDefault
-public class RachioZoneHandler extends BaseThingHandler implements RachioStatusListener {
+public class RachioZoneHandler extends RachioHandler {
 
-    private final Logger logger = LoggerFactory.getLogger(RachioZoneHandler.class);
-    
     private RachioZoneConfiguration config = new RachioZoneConfiguration();
-    private @Nullable RachioHttp rachioHttp;
-    private @Nullable RachioBridgeHandler bridgeHandler;
     private @Nullable RachioZone zoneData;
     
     // Runtime tracking
@@ -62,7 +52,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         logger.debug("Received command {} for channel {}", command, channelUID);
         
         if (command instanceof RefreshType) {
-            refresh();
+            handleRefreshCommand(channelUID);
             return;
         }
         
@@ -73,10 +63,10 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 case RachioBindingConstants.CHANNEL_ZONE_RUN:
                     handleRunCommand(command);
                     break;
-                case RachioZoneHandler.CHANNEL_ZONE_ENABLED:
+                case RachioBindingConstants.CHANNEL_ZONE_ENABLED:
                     handleEnabledCommand(command);
                     break;
-                case RachioZoneHandler.CHANNEL_ZONE_RUN_TIME:
+                case RachioBindingConstants.CHANNEL_ZONE_RUN_TIME:
                     handleRuntimeCommand(command);
                     break;
                 default:
@@ -129,7 +119,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         createDynamicChannels();
         
         // Schedule initial refresh
-        scheduler.schedule(this::refresh, 3, TimeUnit.SECONDS);
+        scheduleRefresh(3);
         
         updateStatus(ThingStatus.ONLINE);
         logger.info("Rachio zone handler initialized for zone: {}", config.zoneId);
@@ -194,7 +184,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         }
         
         // Trigger refresh to get updated data
-        scheduler.schedule(this::refresh, 1, TimeUnit.SECONDS);
+        scheduleRefresh(1);
     }
 
     private void createDynamicChannels() {
@@ -229,7 +219,6 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 .withType(channelTypeUID)
                 .withLabel(getChannelLabel(channelId))
                 .withDescription(getChannelDescription(channelId))
-                .withCategory(category)
                 .build();
             
             updateThing(editThing().withChannel(channel).build());
@@ -285,12 +274,19 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         logger.debug("Updating channels for zone: {}", zone.name);
         
         // Update zone properties
-        updateProperty(RachioBindingConstants.PROPERTY_NAME, zone.name);
-        updateProperty(RachioBindingConstants.PROPERTY_ZONE_NUMBER, String.valueOf(zone.zoneNumber));
+        updatePropertyIfChanged(RachioBindingConstants.PROPERTY_NAME, zone.name);
+        if (zone.zoneNumber != null) {
+            updatePropertyIfChanged(RachioBindingConstants.PROPERTY_ZONE_NUMBER, String.valueOf(zone.zoneNumber));
+        }
         
         // Update basic zone channels
-        updateState(RachioBindingConstants.CHANNEL_ZONE_ENABLED, OnOffType.from(zone.enabled));
-        updateState(RachioBindingConstants.CHANNEL_ZONE_RUN_TIME, new DecimalType(zone.runtime));
+        if (zone.enabled != null) {
+            updateState(RachioBindingConstants.CHANNEL_ZONE_ENABLED, OnOffType.from(zone.enabled));
+        }
+        
+        if (zone.runtime != null) {
+            updateState(RachioBindingConstants.CHANNEL_ZONE_RUN_TIME, new DecimalType(zone.runtime));
+        }
         
         // Update zone status (from last known or default)
         if (zone.status != null) {
@@ -413,7 +409,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 updateState(RachioBindingConstants.CHANNEL_ZONE_RUN, (OnOffType) command);
                 
                 // Refresh after command
-                scheduler.schedule(this::refresh, 2, TimeUnit.SECONDS);
+                scheduleRefresh(2);
             }
             
         } catch (Exception e) {
@@ -429,7 +425,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 logger.info("Set zone {} enabled to {}", config.zoneId, enabled);
                 
                 // Refresh after command
-                scheduler.schedule(this::refresh, 2, TimeUnit.SECONDS);
+                scheduleRefresh(2);
                 
             } catch (Exception e) {
                 logger.error("Error handling enabled command: {}", e.getMessage(), e);
@@ -475,17 +471,5 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 }
             }
         }
-    }
-
-    private @Nullable RachioBridgeHandler getBridgeHandler() {
-        if (getBridge() == null) {
-            return null;
-        }
-        return (RachioBridgeHandler) getBridge().getHandler();
-    }
-
-    @Override
-    public Thing getThing() {
-        return super.getThing();
     }
 }
