@@ -7,170 +7,146 @@ import org.eclipse.jdt.annotation.Nullable;
 
 import com.google.gson.annotations.SerializedName;
 
+/**
+ * DTO for Rachio zone
+ *
+ * @author Damion Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class RachioZone {
-    @SerializedName("id")
-    private String id = "";
-
+    public @Nullable String id;
+    public @Nullable String name;
+    
     @SerializedName("zoneNumber")
-    private int zoneNumber = 0;
-
-    @SerializedName("name")
-    private String name = "";
-
-    @SerializedName("enabled")
-    private boolean enabled = false;
-
+    public @Nullable Integer zoneNumber;
+    
+    public @Nullable Boolean enabled;
+    
     @SerializedName("runtime")
-    private int runtime = 0;
-
-    @SerializedName("maxRuntime")
-    private int maxRuntime = 0;
-
-    @SerializedName("imageUrl")
-    @Nullable
-    private String imageUrl;
-
+    public @Nullable Integer runtime;
+    
+    public @Nullable String status;
+    
+    // Professional irrigation data
+    @SerializedName("area")
+    public @Nullable Double area;
+    
     @SerializedName("soil")
-    @Nullable
-    private CustomSoil soil;
-
+    public @Nullable CustomSoil soil;
+    
     @SerializedName("crop")
-    @Nullable
-    private CustomCrop crop;
-
+    public @Nullable CustomCrop crop;
+    
     @SerializedName("nozzle")
-    @Nullable
-    private CustomNozzle nozzle;
-
+    public @Nullable CustomNozzle nozzle;
+    
     @SerializedName("slope")
-    @Nullable
-    private CustomSlope slope;
-
+    public @Nullable CustomSlope slope;
+    
     @SerializedName("shade")
-    @Nullable
-    private CustomShade shade;
-
-    @SerializedName("rootDepth")
-    private double rootDepth = 0.0;
-
-    @SerializedName("irrigationEfficiency")
-    private double irrigationEfficiency = 0.0;
-
-    @SerializedName("adjustmentLevels")
-    @Nullable
-    private List<Integer> adjustmentLevels;
-
-    @SerializedName("zoneArea")
-    private double zoneArea = 0.0;
-
-    // Getters
-    public String getId() {
+    public @Nullable CustomShade shade;
+    
+    @SerializedName("rootZoneDepth")
+    public @Nullable Double rootZoneDepth;
+    
+    @SerializedName("efficiency")
+    public @Nullable Double efficiency;
+    
+    @SerializedName("availableWater")
+    public @Nullable Double availableWater;
+    
+    @SerializedName("wateringAdjustmentRuntimes")
+    public @Nullable List<Integer> wateringAdjustmentRuntimes;
+    
+    @SerializedName("imageUrl")
+    public @Nullable String imageUrl;
+    
+    // Getters for compatibility with existing code
+    public @Nullable String getId() {
         return id;
     }
-
-    public int getZoneNumber() {
-        return zoneNumber;
-    }
-
-    public String getName() {
+    
+    public @Nullable String getName() {
         return name;
     }
-
-    public boolean isEnabled() {
+    
+    public @Nullable Integer getZoneNumber() {
+        return zoneNumber;
+    }
+    
+    public @Nullable Boolean isEnabled() {
         return enabled;
     }
-
-    public int getRuntime() {
+    
+    public @Nullable Integer getRuntime() {
         return runtime;
     }
-
-    public int getMaxRuntime() {
-        return maxRuntime;
+    
+    public @Nullable String getStatus() {
+        return status;
     }
-
-    @Nullable
-    public String getImageUrl() {
-        return imageUrl;
+    
+    public @Nullable Double getArea() {
+        return area;
     }
-
-    @Nullable
-    public CustomSoil getSoil() {
+    
+    public @Nullable CustomSoil getSoil() {
         return soil;
     }
-
-    @Nullable
-    public CustomCrop getCrop() {
+    
+    public @Nullable String getSoilType() {
+        return soil != null ? soil.name : null;
+    }
+    
+    public @Nullable CustomCrop getCrop() {
         return crop;
     }
-
-    @Nullable
-    public CustomNozzle getNozzle() {
+    
+    public @Nullable String getCropType() {
+        return crop != null ? crop.name : null;
+    }
+    
+    public @Nullable CustomNozzle getNozzle() {
         return nozzle;
     }
-
-    @Nullable
-    public CustomSlope getSlope() {
+    
+    public @Nullable String getNozzleType() {
+        return nozzle != null ? nozzle.name : null;
+    }
+    
+    public @Nullable CustomSlope getSlope() {
         return slope;
     }
-
-    @Nullable
-    public CustomShade getShade() {
+    
+    public @Nullable String getSlopeType() {
+        return slope != null ? slope.name : null;
+    }
+    
+    public @Nullable CustomShade getShade() {
         return shade;
     }
-
-    public double getRootDepth() {
-        return rootDepth;
+    
+    public @Nullable String getShadeType() {
+        return shade != null ? shade.name : null;
     }
-
-    public double getIrrigationEfficiency() {
-        return irrigationEfficiency;
+    
+    public @Nullable Double getRootZoneDepth() {
+        return rootZoneDepth;
     }
-
-    @Nullable
-    public List<Integer> getAdjustmentLevels() {
-        return adjustmentLevels;
+    
+    public @Nullable Double getEfficiency() {
+        return efficiency;
     }
-
-    public double getZoneArea() {
-        return zoneArea;
+    
+    public @Nullable Double getAvailableWater() {
+        return availableWater;
     }
-
-    // Helper methods for accessing nested objects
-    @Nullable
-    public String getSoilName() {
-        return soil != null ? soil.getName() : null;
+    
+    public @Nullable List<Integer> getWateringAdjustmentRuntimes() {
+        return wateringAdjustmentRuntimes;
     }
-
-    public double getSoilAvailableWater() {
-        return soil != null ? soil.getAvailableWater() : 0.0;
-    }
-
-    @Nullable
-    public String getCropName() {
-        return crop != null ? crop.getName() : null;
-    }
-
-    public double getCropCoefficient() {
-        return crop != null ? crop.getCoefficient() : 0.0;
-    }
-
-    @Nullable
-    public String getNozzleName() {
-        return nozzle != null ? nozzle.getName() : null;
-    }
-
-    public double getNozzleInchesPerHour() {
-        return nozzle != null ? nozzle.getInchesPerHour() : 0.0;
-    }
-
-    @Nullable
-    public String getSlopeName() {
-        return slope != null ? slope.getName() : null;
-    }
-
-    @Nullable
-    public String getShadeName() {
-        return shade != null ? shade.getName() : null;
+    
+    public @Nullable String getImageUrl() {
+        return imageUrl;
     }
 }
