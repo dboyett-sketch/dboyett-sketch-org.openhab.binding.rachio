@@ -1,13 +1,22 @@
 package org.openhab.binding.rachio.internal.api;
 
-import java.util.List;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+import java.util.List;
+
+/**
+ * DTO for Rachio Webhook List API Response
+ *
+ * @author David Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class RachioApiWebHookList {
-    public @Nullable List<RachioApiWebHookEntry> data;
+    @Nullable
+    public List<RachioApiWebHookEntry> data;
     
-    public @Nullable List<RachioApiWebHookEntry> getData() { return data; }
+    @Override
+    public String toString() {
+        return "RachioApiWebHookList [data=" + (data != null ? data.size() : 0) + " entries]";
+    }
 }
