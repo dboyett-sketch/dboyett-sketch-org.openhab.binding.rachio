@@ -214,17 +214,45 @@ public abstract class RachioHandler extends BaseThingHandler {
     }
     
     /**
-     * Update a channel state with a numeric value
+     * Update a channel state with an int value
      */
-    protected void updateState(String channelId, Number value) {
-        updateState(channelId, new DecimalType(value.toString()));
+    protected void updateState(String channelId, int value) {
+        updateState(channelId, new DecimalType(value));
     }
     
     /**
-     * Update a channel state with a quantity value
+     * Update a channel state with a long value
+     */
+    protected void updateState(String channelId, long value) {
+        updateState(channelId, new DecimalType(value));
+    }
+    
+    /**
+     * Update a channel state with a double value
+     */
+    protected void updateState(String channelId, double value) {
+        updateState(channelId, new DecimalType(value));
+    }
+    
+    /**
+     * Update a channel state with a float value
+     */
+    protected void updateState(String channelId, float value) {
+        updateState(channelId, new DecimalType(value));
+    }
+    
+    /**
+     * Update a channel state with a BigDecimal value
+     */
+    protected void updateState(String channelId, BigDecimal value) {
+        updateState(channelId, new DecimalType(value));
+    }
+    
+    /**
+     * Update a channel state with a quantity value (using string unit)
      */
     protected void updateState(String channelId, Number value, String unit) {
-        updateState(channelId, new QuantityType<>(value.toString() + " " + unit));
+        updateState(channelId, new QuantityType<>(value + " " + unit));
     }
     
     /**
