@@ -4,6 +4,7 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
 import java.time.Instant;
+import java.util.Map;
 
 /**
  * DTO for Device Alerts
