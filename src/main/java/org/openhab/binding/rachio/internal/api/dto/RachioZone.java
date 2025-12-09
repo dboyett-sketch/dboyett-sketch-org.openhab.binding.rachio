@@ -1,152 +1,102 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.util.List;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
-import com.google.gson.annotations.SerializedName;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * DTO for Rachio zone
+ * DTO for Rachio Zone
  *
- * @author Damion Boyett - Initial contribution
+ * @author David Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioZone {
-    public @Nullable String id;
-    public @Nullable String name;
+    @Nullable
+    public String id;
     
-    @SerializedName("zoneNumber")
-    public @Nullable Integer zoneNumber;
+    @Nullable
+    public String deviceId;
     
-    public @Nullable Boolean enabled;
+    @Nullable
+    public Integer zoneNumber;
     
-    @SerializedName("runtime")
-    public @Nullable Integer runtime;
+    @Nullable
+    public String name;
     
-    public @Nullable String status;
+    @Nullable
+    public Boolean enabled;
     
-    // Professional irrigation data
-    @SerializedName("area")
-    public @Nullable Double area;
+    @Nullable
+    public Integer runtime;
     
-    @SerializedName("soil")
-    public @Nullable CustomSoil soil;
+    @Nullable
+    public String status; // STARTED, STOPPED, COMPLETED
     
-    @SerializedName("crop")
-    public @Nullable CustomCrop crop;
+    @Nullable
+    public CustomSoil customSoil;
     
-    @SerializedName("nozzle")
-    public @Nullable CustomNozzle nozzle;
+    @Nullable
+    public CustomCrop customCrop;
     
-    @SerializedName("slope")
-    public @Nullable CustomSlope slope;
+    @Nullable
+    public CustomNozzle customNozzle;
     
-    @SerializedName("shade")
-    public @Nullable CustomShade shade;
+    @Nullable
+    public CustomSlope customSlope;
     
-    @SerializedName("rootZoneDepth")
-    public @Nullable Double rootZoneDepth;
+    @Nullable
+    public CustomShade customShade;
     
-    @SerializedName("efficiency")
-    public @Nullable Double efficiency;
+    @Nullable
+    public Double rootDepth; // inches
     
-    @SerializedName("availableWater")
-    public @Nullable Double availableWater;
+    @Nullable
+    public Double efficiency; // percentage
     
-    @SerializedName("wateringAdjustmentRuntimes")
-    public @Nullable List<Integer> wateringAdjustmentRuntimes;
+    @Nullable
+    public Map<Integer, Double> waterAdjustment; // levels 1-5
     
-    @SerializedName("imageUrl")
-    public @Nullable String imageUrl;
+    @Nullable
+    public Double area; // square feet
     
-    // Getters for compatibility with existing code
-    public @Nullable String getId() {
-        return id;
+    // Additional professional data fields
+    @Nullable
+    public Double availableWater;
+    
+    @Nullable
+    public Double cropCoefficient;
+    
+    @Nullable
+    public Double nozzleInchesPerHour;
+    
+    @Nullable
+    public String soilType;
+    
+    @Nullable
+    public String cropType;
+    
+    @Nullable
+    public String nozzleType;
+    
+    @Nullable
+    public String slopeType;
+    
+    @Nullable
+    public String shadeType;
+
+    @Override
+    public String toString() {
+        return "RachioZone [id=" + id + ", name=" + name + ", zoneNumber=" + zoneNumber + ", enabled=" + enabled + 
+               ", runtime=" + runtime + ", status=" + status + ", area=" + area + "]";
     }
     
-    public @Nullable String getName() {
-        return name;
-    }
-    
-    public @Nullable Integer getZoneNumber() {
-        return zoneNumber;
-    }
-    
-    public @Nullable Boolean isEnabled() {
-        return enabled;
-    }
-    
-    public @Nullable Integer getRuntime() {
-        return runtime;
-    }
-    
-    public @Nullable String getStatus() {
-        return status;
-    }
-    
-    public @Nullable Double getArea() {
-        return area;
-    }
-    
-    public @Nullable CustomSoil getSoil() {
-        return soil;
-    }
-    
-    public @Nullable String getSoilType() {
-        return soil != null ? soil.name : null;
-    }
-    
-    public @Nullable CustomCrop getCrop() {
-        return crop;
-    }
-    
-    public @Nullable String getCropType() {
-        return crop != null ? crop.name : null;
-    }
-    
-    public @Nullable CustomNozzle getNozzle() {
-        return nozzle;
-    }
-    
-    public @Nullable String getNozzleType() {
-        return nozzle != null ? nozzle.name : null;
-    }
-    
-    public @Nullable CustomSlope getSlope() {
-        return slope;
-    }
-    
-    public @Nullable String getSlopeType() {
-        return slope != null ? slope.name : null;
-    }
-    
-    public @Nullable CustomShade getShade() {
-        return shade;
-    }
-    
-    public @Nullable String getShadeType() {
-        return shade != null ? shade.name : null;
-    }
-    
-    public @Nullable Double getRootZoneDepth() {
-        return rootZoneDepth;
-    }
-    
-    public @Nullable Double getEfficiency() {
-        return efficiency;
-    }
-    
-    public @Nullable Double getAvailableWater() {
-        return availableWater;
-    }
-    
-    public @Nullable List<Integer> getWateringAdjustmentRuntimes() {
-        return wateringAdjustmentRuntimes;
-    }
-    
-    public @Nullable String getImageUrl() {
-        return imageUrl;
+    // Helper method to get water adjustment level
+    public double getWaterAdjustmentLevel(int level) {
+        if (waterAdjustment != null && waterAdjustment.containsKey(level)) {
+            return waterAdjustment.get(level);
+        }
+        return 0.0;
     }
 }
