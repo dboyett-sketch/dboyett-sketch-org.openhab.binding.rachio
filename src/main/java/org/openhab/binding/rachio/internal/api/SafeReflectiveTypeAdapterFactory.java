@@ -10,68 +10,101 @@ import org.eclipse.jdt.annotation.NonNullByDefault;
 
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.util.HashMap;
+import java.util.Map;
 
 /**
- * Safe TypeAdapterFactory that handles null values gracefully
- * Prevents NullPointerException when deserializing JSON
- * 
- * @author Dave Boyett - Initial contribution
+ * Safe reflective type adapter factory for Gson that prevents
+ * reflection-based attacks by limiting field access.
+ *
+ * @author David Boyett - Initial contribution
  */
 @NonNullByDefault
 public class SafeReflectiveTypeAdapterFactory implements TypeAdapterFactory {
 
     @Override
+    @SuppressWarnings("unchecked")
     public <T> TypeAdapter<T> create(Gson gson, TypeToken<T> type) {
-        // Get the default reflective type adapter
-        TypeAdapter<T> delegate = gson.getDelegateAdapter(this, type);
+        Class<? super T> rawType = type.getRawType();
         
-        return new TypeAdapter<T>() {
-            @Override
-            public void write(JsonWriter out, T value) throws IOException {
-                delegate.write(out, value);
-            }
+        // Only create adapters for our DTO classes in the rachio package
+        if (!rawType.getName().startsWith("org.openhab.binding.rachio")) {
+            return null;
+        }
+        
+        // Create a safe adapter that only allows known fields
+        return (TypeAdapter<T>) new SafeTypeAdapter<>(gson, rawType);
+    }
 
-            @Override
-            public T read(JsonReader in) throws IOException {
-                try {
-                    return delegate.read(in);
-                } catch (Exception e) {
-                    // Log error but don't crash
-                    System.err.println("Error deserializing " + type.getRawType().getName() + ": " + e.getMessage());
-                    // Skip the value
-                    in.skipValue();
-                    return null;
+    private static class SafeTypeAdapter<T> extends TypeAdapter<T> {
+        private final Gson gson;
+        private final Class<T> clazz;
+        private final Map<String, Field> allowedFields;
+        
+        @SuppressWarnings("unchecked")
+        SafeTypeAdapter(Gson gson, Class<?> clazz) {
+            this.gson = gson;
+            this.clazz = (Class<T>) clazz;
+            this.allowedFields = new HashMap<>();
+            
+            // Only allow fields that are explicitly marked with @Nullable or have public access
+            for (Field field : clazz.getDeclaredFields()) {
+                if (field.isAnnotationPresent(org.eclipse.jdt.annotation.Nullable.class) || 
+                    java.lang.reflect.Modifier.isPublic(field.getModifiers())) {
+                    field.setAccessible(true);
+                    allowedFields.put(field.getName(), field);
                 }
             }
-        };
-    }
-    
-    /**
-     * Helper method to safely set field values
-     */
-    public static void safeSetField(Object object, Field field, Object value) {
-        if (field != null) {
-            try {
-                field.setAccessible(true);
-                field.set(object, value);
-            } catch (IllegalAccessException e) {
-                // Ignore - field might be final or inaccessible
-            }
         }
-    }
-    
-    /**
-     * Helper method to safely get field values
-     */
-    public static Object safeGetField(Object object, Field field) {
-        if (field != null) {
-            try {
-                field.setAccessible(true);
-                return field.get(object);
-            } catch (IllegalAccessException e) {
+
+        @Override
+        public void write(JsonWriter out, T value) throws IOException {
+            if (value == null) {
+                out.nullValue();
+                return;
+            }
+            
+            out.beginObject();
+            for (Map.Entry<String, Field> entry : allowedFields.entrySet()) {
+                try {
+                    Object fieldValue = entry.getValue().get(value);
+                    if (fieldValue != null) {
+                        out.name(entry.getKey());
+                        gson.toJson(fieldValue, fieldValue.getClass(), out);
+                    }
+                } catch (IllegalAccessException e) {
+                    // Skip this field
+                }
+            }
+            out.endObject();
+        }
+
+        @Override
+        public T read(JsonReader in) throws IOException {
+            if (in.peek() == com.google.gson.stream.JsonToken.NULL) {
+                in.nextNull();
                 return null;
             }
+            
+            try {
+                T instance = clazz.getDeclaredConstructor().newInstance();
+                in.beginObject();
+                while (in.hasNext()) {
+                    String name = in.nextName();
+                    Field field = allowedFields.get(name);
+                    if (field != null) {
+                        Object value = gson.fromJson(in, field.getType());
+                        field.set(instance, value);
+                    } else {
+                        // Skip unknown field for safety
+                        in.skipValue();
+                    }
+                }
+                in.endObject();
+                return instance;
+            } catch (Exception e) {
+                throw new IOException("Failed to deserialize " + clazz.getName() + ": " + e.getMessage(), e);
+            }
         }
-        return null;
     }
 }
