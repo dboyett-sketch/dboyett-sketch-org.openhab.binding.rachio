@@ -3,19 +3,42 @@ package org.openhab.binding.rachio.internal.api.dto;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+import java.time.Instant;
+
+/**
+ * DTO for individual forecast day
+ *
+ * @author David Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class ForecastDay {
-    public @Nullable Double temp; // Temperature in Celsius
-    public @Nullable Double precip; // Precipitation in mm
-    public @Nullable Double humidity; // Humidity percentage
-    public @Nullable Double wind; // Wind speed in km/h
-    public @Nullable Double solar; // Solar radiation in W/m²
-    public @Nullable Double et; // Evapotranspiration in mm
+    @Nullable
+    public Instant date;
     
-    public @Nullable Double getTemp() { return temp; }
-    public @Nullable Double getPrecip() { return precip; }
-    public @Nullable Double getHumidity() { return humidity; }
-    public @Nullable Double getWind() { return wind; }
-    public @Nullable Double getSolar() { return solar; }
-    public @Nullable Double getEt() { return et; }
+    @Nullable
+    public Double highTemperature;
+    
+    @Nullable
+    public Double lowTemperature;
+    
+    @Nullable
+    public Double precipitation;
+    
+    @Nullable
+    public Double precipitationProbability;
+    
+    @Nullable
+    public Double evapotranspiration;
+    
+    @Nullable
+    public Boolean smartSkip; // whether watering should be skipped
+    
+    @Nullable
+    public String condition; // SUNNY, CLOUDY, RAIN, etc.
+    
+    @Override
+    public String toString() {
+        return "ForecastDay [date=" + date + ", high=" + highTemperature + ", low=" + lowTemperature + 
+               ", precipitation=" + precipitation + ", smartSkip=" + smartSkip + "]";
+    }
 }
