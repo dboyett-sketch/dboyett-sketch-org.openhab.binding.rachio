@@ -1,31 +1,38 @@
 package org.openhab.binding.rachio.internal.handler;
 
-import java.util.Collection;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
-import org.openhab.binding.rachio.internal.api.dto.RachioWebHookEvent;
+import org.openhab.core.thing.Thing;
+
+import java.util.Map;
 
 /**
- * Listener interface for Rachio status updates
+ * The {@link RachioStatusListener} is an interface for things that want to
+ * receive status updates from the Rachio bridge via webhooks or polling.
  *
- * @author Damion Boyett - Initial contribution
+ * @author David Boyett - Initial contribution
  */
 @NonNullByDefault
 public interface RachioStatusListener {
+
     /**
-     * Called when the device list is updated
+     * Get the thing associated with this listener
      */
-    void deviceListUpdated(Collection<RachioDevice> devices);
-    
+    Thing getThing();
+
     /**
-     * Called when a specific device is updated
+     * Refresh the thing's state from the API
      */
-    void deviceUpdated(RachioDevice device);
-    
+    void refresh();
+
     /**
-     * Called when a webhook event is received
+     * Handle a webhook event from the Rachio API
+     * 
+     * @param eventType the type of event (e.g., ZONE_STATUS, DEVICE_STATUS)
+     * @param deviceId the device ID the event is for
+     * @param zoneId the zone ID (if applicable, null for device events)
+     * @param data additional event data
      */
-    void webhookEventReceived(RachioWebHookEvent event);
+    void onWebhookEvent(String eventType, String deviceId, @Nullable String zoneId, 
+                        @Nullable Map<String, Object> data);
 }
