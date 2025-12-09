@@ -3,10 +3,6 @@ package org.openhab.binding.rachio.internal.handler;
 import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
 
 import java.io.IOException;
-import java.math.BigDecimal;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
@@ -30,7 +26,6 @@ import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.StringType;
-import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.Channel;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
@@ -42,6 +37,8 @@ import org.openhab.core.types.RefreshType;
 import org.openhab.core.types.State;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import com.google.gson.reflect.TypeToken;
 
 /**
  * The {@link RachioDeviceHandler} is responsible for handling commands for Rachio devices
@@ -100,7 +97,7 @@ public class RachioDeviceHandler extends RachioHandler {
 
     @Override
     protected void handleWebhookEvent(RachioWebHookEvent event) {
-        if (event == null || device == null || !config.deviceId.equals(event.deviceId)) {
+        if (event == null || device == null || config == null || !config.deviceId.equals(event.deviceId)) {
             return;
         }
         
@@ -290,7 +287,8 @@ public class RachioDeviceHandler extends RachioHandler {
             }
             
             if (totalArea > 0) {
-                updateState(CHANNEL_TOTAL_AREA, new QuantityType<>(totalArea, Units.SQUARE_METRE));
+                // Use string unit instead of Units.SQUARE_METRE
+                updateState(CHANNEL_TOTAL_AREA, new QuantityType<>(totalArea + " m²"));
             }
         }
         
@@ -360,23 +358,31 @@ public class RachioDeviceHandler extends RachioHandler {
                 RachioForecast.ForecastDay today = forecast.days.get(0);
                 
                 if (today.temp != null) {
-                    updateState(CHANNEL_FORECAST_TEMP, new QuantityType<>(today.temp, Units.CELSIUS));
+                    // Use string unit instead of Units.CELSIUS
+                    updateState(CHANNEL_FORECAST_TEMP, new QuantityType<>(today.temp + " °C"));
                 }
                 
                 if (today.precip != null) {
-                    updateState(CHANNEL_FORECAST_PRECIP, new QuantityType<>(today.precip, Units.MILLIMETRE));
+                    // Use string unit instead of Units.MILLIMETRE
+                    updateState(CHANNEL_FORECAST_PRECIP, new QuantityType<>(today.precip + " mm"));
                 }
                 
                 if (today.humidity != null) {
-                    updateState(CHANNEL_FORECAST_HUMIDITY, new QuantityType<>(today.humidity, Units.PERCENT));
+                    // Use string unit for percent
+                    updateState(CHANNEL_FORECAST_HUMIDITY, new QuantityType<>(today.humidity + " %"));
                 }
                 
                 if (today.wind != null) {
-                    updateState(CHANNEL_FORECAST_WIND, new QuantityType<>(today.wind, Units.KILOMETRE_PER_HOUR));
+                    // Use string unit instead of Units.KILOMETRE_PER_HOUR
+                    updateState(CHANNEL_FORECAST_WIND, new QuantityType<>(today.wind + " km/h"));
                 }
                 
                 if (today.solar != null) {
-                    updateState(CHANNEL_FORECAST_SOLAR, new QuantityType<>(today.solar, "W/m²"));
+                    updateState(CHANNEL_FORECAST_SOLAR, new QuantityType<>(today.solar + " W/m²"));
+                }
+                
+                if (today.et != null) {
+                    updateState(CHANNEL_FORECAST_ET, new QuantityType<>(today.et + " mm"));
                 }
             }
         }
@@ -396,15 +402,15 @@ public class RachioDeviceHandler extends RachioHandler {
             RachioUsage usage = getGson().fromJson(usageJson, RachioUsage.class);
             if (usage != null) {
                 if (usage.totalUsage != null) {
-                    updateState(CHANNEL_USAGE_TOTAL, new QuantityType<>(usage.totalUsage, "gal"));
+                    updateState(CHANNEL_USAGE_TOTAL, new QuantityType<>(usage.totalUsage + " gal"));
                 }
                 
                 if (usage.savings != null) {
-                    updateState(CHANNEL_USAGE_SAVINGS, new QuantityType<>(usage.savings, "gal"));
+                    updateState(CHANNEL_USAGE_SAVINGS, new QuantityType<>(usage.savings + " gal"));
                 }
                 
                 if (usage.currentUsage != null) {
-                    updateState(CHANNEL_USAGE_CURRENT, new QuantityType<>(usage.currentUsage, "gal"));
+                    updateState(CHANNEL_USAGE_CURRENT, new QuantityType<>(usage.currentUsage + " gal"));
                 }
             }
         }
@@ -428,7 +434,7 @@ public class RachioDeviceHandler extends RachioHandler {
         String alertsJson = localHttp.getDeviceAlerts(config.deviceId);
         if (alertsJson != null && !alertsJson.isEmpty()) {
             List<RachioAlert> alerts = getGson().fromJson(alertsJson, 
-                com.google.gson.reflect.TypeToken.getParameterized(List.class, RachioAlert.class).getType());
+                new TypeToken<List<RachioAlert>>() {}.getType());
             
             if (alerts != null && !alerts.isEmpty()) {
                 StringBuilder alertText = new StringBuilder();
