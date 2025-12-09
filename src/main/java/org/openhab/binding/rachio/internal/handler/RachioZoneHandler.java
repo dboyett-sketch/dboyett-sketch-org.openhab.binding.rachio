@@ -16,7 +16,6 @@ import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.types.StringType;
-import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.Channel;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
@@ -24,6 +23,7 @@ import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
+import org.openhab.core.types.State;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -158,8 +158,8 @@ public class RachioZoneHandler extends RachioHandler {
                         localHttp.setZoneEnabled(config.deviceId, config.zoneId, enabled);
                         logger.debug("Set zone {} enabled to {}", config.zoneId, enabled);
                         
-                        // Update the state immediately
-                        updateState(channelUID, command);
+                        // Update the state immediately - OnOffType implements both Command and State
+                        updateState(channelUID, (OnOffType) command);
                     }
                     break;
                     
@@ -363,7 +363,8 @@ public class RachioZoneHandler extends RachioHandler {
             
             // Update professional data channels
             if (zone.area != null) {
-                updateState(CHANNEL_ZONE_AREA, new QuantityType<>(zone.area, Units.SQUARE_METRE));
+                // Use string unit instead of Units.SQUARE_METRE
+                updateState(CHANNEL_ZONE_AREA, new QuantityType<>(zone.area + " m²"));
             }
             
             if (zone.soil != null && zone.soil.name != null) {
@@ -387,11 +388,13 @@ public class RachioZoneHandler extends RachioHandler {
             }
             
             if (zone.rootZoneDepth != null) {
-                updateState(CHANNEL_ZONE_ROOT_DEPTH, new QuantityType<>(zone.rootZoneDepth, Units.INCH));
+                // Use string unit instead of Units.INCH
+                updateState(CHANNEL_ZONE_ROOT_DEPTH, new QuantityType<>(zone.rootZoneDepth + " in"));
             }
             
             if (zone.efficiency != null) {
-                updateState(CHANNEL_ZONE_EFFICIENCY, new QuantityType<>(zone.efficiency, Units.PERCENT));
+                // Use string unit for percent
+                updateState(CHANNEL_ZONE_EFFICIENCY, new QuantityType<>(zone.efficiency + " %"));
             }
             
             if (zone.availableWater != null) {
