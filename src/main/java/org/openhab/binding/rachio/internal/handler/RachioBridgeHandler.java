@@ -3,6 +3,8 @@ package org.openhab.binding.rachio.internal.handler;
 import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
 
 import java.io.IOException;
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.Map;
@@ -17,6 +19,7 @@ import org.openhab.binding.rachio.internal.api.RachioSecurity;
 import org.openhab.binding.rachio.internal.api.RachioWebHookServlet;
 import org.openhab.binding.rachio.internal.api.RachioWebHookServletService;
 import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
+import org.openhab.binding.rachio.internal.api.dto.RachioPerson;
 import org.openhab.binding.rachio.internal.api.dto.RachioWebHookEvent;
 import org.openhab.binding.rachio.internal.api.dto.RachioZone;
 import org.openhab.binding.rachio.internal.config.RachioBridgeConfiguration;
@@ -79,15 +82,26 @@ public class RachioBridgeHandler extends BaseBridgeHandler {
 
         scheduler.submit(() -> {
             try {
-                // Initialize HTTP client
-                RachioHttp localHttp = new RachioHttp(config.accessToken, httpClientFactory.getCommonHttpClient(), gson);
+                // Initialize HTTP client using Java's HttpClient for HTTP/2 support
+                HttpClient javaHttpClient = HttpClient.newBuilder()
+                    .version(HttpClient.Version.HTTP_2)
+                    .connectTimeout(Duration.ofSeconds(30))
+                    .build();
+                    
+                RachioHttp localHttp = new RachioHttp(config.accessToken, javaHttpClient, gson);
                 this.http = localHttp;
 
                 // Initialize security
                 RachioSecurity localSecurity = new RachioSecurity();
-                localSecurity.setSecretKey(config.secretKey != null ? config.secretKey : "");
-                localSecurity.setAllowedIpAddresses(config.allowedIps != null ? config.allowedIps : "");
-                localSecurity.setAllowAwsIps(config.allowAwsIps != null ? config.allowAwsIps : false);
+                if (config.secretKey != null) {
+                    localSecurity.setSecretKey(config.secretKey);
+                }
+                if (config.allowedIps != null) {
+                    localSecurity.setAllowedIpAddresses(config.allowedIps);
+                }
+                if (config.allowAwsIps != null) {
+                    localSecurity.setAllowAwsIps(config.allowAwsIps);
+                }
                 this.security = localSecurity;
 
                 // Test API connection
@@ -183,6 +197,14 @@ public class RachioBridgeHandler extends BaseBridgeHandler {
     }
 
     /**
+     * Get the secret key from configuration
+     */
+    public @Nullable String getSecretKey() {
+        RachioBridgeConfiguration localConfig = config;
+        return localConfig != null ? localConfig.secretKey : null;
+    }
+
+    /**
      * Start polling for device updates
      */
     private void startPolling() {
@@ -218,7 +240,7 @@ public class RachioBridgeHandler extends BaseBridgeHandler {
             // Get person info to get device list
             String personJson = localHttp.executeGet("/person/info");
             if (personJson != null && !personJson.isEmpty()) {
-                org.openhab.binding.rachio.internal.api.dto.RachioPerson person = gson.fromJson(personJson, org.openhab.binding.rachio.internal.api.dto.RachioPerson.class);
+                RachioPerson person = gson.fromJson(personJson, RachioPerson.class);
                 
                 if (person != null && person.devices != null) {
                     devices.clear();
