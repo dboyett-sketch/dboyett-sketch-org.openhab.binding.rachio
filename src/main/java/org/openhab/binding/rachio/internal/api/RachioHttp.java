@@ -1,340 +1,338 @@
 package org.openhab.binding.rachio.internal.api;
 
 import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.Reader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
-import org.openhab.binding.rachio.internal.api.dto.RachioEventSummary;
-import org.openhab.binding.rachio.internal.api.dto.RachioPerson;
-import org.openhab.binding.rachio.internal.api.dto.RachioWebHookEvent;
-import org.openhab.binding.rachio.internal.api.dto.RachioZone;
 import org.openhab.core.io.net.http.HttpClientFactory;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonObject;
-import com.google.gson.JsonParser;
 
 /**
- * Handles HTTP communication with the Rachio API
+ * HTTP client for Rachio API communication
+ *
+ * @author Damion Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioHttp {
-    private final Logger logger = LoggerFactory.getLogger(RachioHttp.class);
-
     private static final String API_BASE_URL = "https://api.rach.io/1/public";
-    private static final Duration DEFAULT_TIMEOUT = Duration.ofSeconds(30);
+    private static final int REQUEST_TIMEOUT_SECONDS = 30;
     private static final int MAX_RETRIES = 3;
-    private static final Duration RETRY_DELAY = Duration.ofSeconds(2);
 
-    private final HttpClient httpClient;
+    private final Logger logger = LoggerFactory.getLogger(RachioHttp.class);
     private final String apiKey;
+    private final HttpClient httpClient;
     private final Gson gson;
-    private final ScheduledExecutorService scheduler;
 
-    // Rate limiting tracking
-    private final Map<String, RateLimitInfo> rateLimitCache = new ConcurrentHashMap<>();
-    private volatile int currentRateLimit = 14400; // Default: 14400 calls per day
-    private volatile int remainingCalls = 14400;
-    private volatile Instant resetTime = Instant.now().plus(Duration.ofDays(1));
+    private int rateLimitRemaining = 100;
+    private int rateLimitReset = 3600;
+    private long lastRequestTime = 0;
 
-    private static class RateLimitInfo {
-        int limit;
-        int remaining;
-        Instant reset;
+    public RachioHttp(String apiKey, HttpClient httpClient, Gson gson) {
+        this.apiKey = apiKey;
+        this.httpClient = httpClient;
+        this.gson = gson;
     }
 
-    public RachioHttp(String apiKey, HttpClientFactory httpClientFactory) {
+    /**
+     * Constructor with HttpClientFactory for compatibility
+     */
+    public RachioHttp(String apiKey, HttpClientFactory httpClientFactory, Gson gson) {
         this.apiKey = apiKey;
         this.httpClient = httpClientFactory.getCommonHttpClient();
-        this.gson = new GsonBuilder()
-                .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
-                .create();
-        this.scheduler = Executors.newSingleThreadScheduledExecutor();
-        
-        // Start periodic rate limit cleanup
-        scheduler.scheduleAtFixedRate(this::cleanupRateLimitCache, 1, 1, TimeUnit.HOURS);
+        this.gson = gson;
     }
 
     /**
-     * Get person information
+     * Execute a GET request
      */
-    public @Nullable RachioPerson getPersonInfo() throws IOException, InterruptedException {
-        String url = API_BASE_URL + "/person/info";
-        String response = executeGet(url);
-        
-        if (response != null) {
-            try {
-                return gson.fromJson(response, RachioPerson.class);
-            } catch (Exception e) {
-                logger.error("Failed to parse person info: {}", e.getMessage(), e);
-                throw new IOException("Failed to parse person info response", e);
-            }
-        }
-        return null;
+    public @Nullable String executeGet(String endpoint) throws IOException {
+        return executeRequest("GET", endpoint, null);
     }
 
     /**
-     * Get device information
+     * Execute a POST request
      */
-    public @Nullable RachioDevice getDeviceInfo(String deviceId) throws IOException, InterruptedException {
-        String url = API_BASE_URL + "/device/" + deviceId;
-        String response = executeGet(url);
-        
-        if (response != null) {
-            try {
-                return gson.fromJson(response, RachioDevice.class);
-            } catch (Exception e) {
-                logger.error("Failed to parse device info: {}", e.getMessage(), e);
-                throw new IOException("Failed to parse device info response", e);
-            }
-        }
-        return null;
+    public @Nullable String executePost(String endpoint, @Nullable String body) throws IOException {
+        return executeRequest("POST", endpoint, body);
     }
 
     /**
-     * Get zone information
+     * Execute a PUT request
      */
-    public @Nullable RachioZone getZoneInfo(String zoneId) throws IOException, InterruptedException {
-        String url = API_BASE_URL + "/zone/" + zoneId;
-        String response = executeGet(url);
-        
-        if (response != null) {
-            try {
-                return gson.fromJson(response, RachioZone.class);
-            } catch (Exception e) {
-                logger.error("Failed to parse zone info: {}", e.getMessage(), e);
-                throw new IOException("Failed to parse zone info response", e);
-            }
-        }
-        return null;
+    public @Nullable String executePut(String endpoint, @Nullable String body) throws IOException {
+        return executeRequest("PUT", endpoint, body);
     }
 
     /**
-     * Execute GET request
+     * Execute a DELETE request
      */
-    public String executeGet(String url) throws IOException, InterruptedException {
-        return executeRequest(url, "GET", null);
+    public @Nullable String executeDelete(String endpoint) throws IOException {
+        return executeRequest("DELETE", endpoint, null);
     }
 
     /**
-     * Execute PUT request
+     * Execute an HTTP request with retry logic
      */
-    public String executePut(String url, String body) throws IOException, InterruptedException {
-        return executeRequest(url, "PUT", body);
-    }
-
-    /**
-     * Execute POST request
-     */
-    public String executePost(String url, String body) throws IOException, InterruptedException {
-        return executeRequest(url, "POST", body);
-    }
-
-    /**
-     * Execute DELETE request
-     */
-    public String executeDelete(String url) throws IOException, InterruptedException {
-        return executeRequest(url, "DELETE", null);
-    }
-
-    /**
-     * Execute HTTP request with retry logic
-     */
-    private String executeRequest(String url, String method, @Nullable String body)
-            throws IOException, InterruptedException {
-        
-        int retryCount = 0;
-        IOException lastException = null;
-        
-        while (retryCount <= MAX_RETRIES) {
-            try {
-                HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
-                        .uri(URI.create(url))
-                        .header("Authorization", "Bearer " + apiKey)
-                        .header("Content-Type", "application/json")
-                        .header("Accept", "application/json")
-                        .timeout(DEFAULT_TIMEOUT);
-
-                switch (method) {
-                    case "GET":
-                        requestBuilder.GET();
-                        break;
-                    case "POST":
-                        requestBuilder.POST(HttpRequest.BodyPublishers.ofString(body != null ? body : ""));
-                        break;
-                    case "PUT":
-                        requestBuilder.PUT(HttpRequest.BodyPublishers.ofString(body != null ? body : ""));
-                        break;
-                    case "DELETE":
-                        requestBuilder.DELETE();
-                        break;
-                    default:
-                        throw new IllegalArgumentException("Unsupported HTTP method: " + method);
+    private @Nullable String executeRequest(String method, String endpoint, @Nullable String body) throws IOException {
+        // Check rate limits
+        if (rateLimitRemaining <= 0) {
+            long waitTime = calculateWaitTime();
+            if (waitTime > 0) {
+                logger.warn("Rate limit exceeded, waiting {} seconds before retry", waitTime);
+                try {
+                    Thread.sleep(waitTime * 1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Request interrupted while waiting for rate limit", e);
                 }
+            }
+        }
 
-                HttpRequest request = requestBuilder.build();
+        URI uri = URI.create(API_BASE_URL + endpoint);
+        
+        HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
+            .uri(uri)
+            .header("Authorization", "Bearer " + apiKey)
+            .header("Content-Type", "application/json")
+            .header("Accept", "application/json")
+            .timeout(Duration.ofSeconds(REQUEST_TIMEOUT_SECONDS));
+
+        if (body != null && !body.isEmpty()) {
+            requestBuilder.method(method, HttpRequest.BodyPublishers.ofString(body));
+        } else {
+            requestBuilder.method(method, HttpRequest.BodyPublishers.noBody());
+        }
+
+        HttpRequest request = requestBuilder.build();
+
+        int retryCount = 0;
+        while (retryCount < MAX_RETRIES) {
+            try {
+                lastRequestTime = System.currentTimeMillis();
+                
                 HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-
-                // Update rate limiting from headers
-                updateRateLimitInfo(response.headers().map());
-
+                
+                // Update rate limit information
+                updateRateLimits(response.headers());
+                
                 int statusCode = response.statusCode();
+                
                 if (statusCode >= 200 && statusCode < 300) {
                     return response.body();
-                } else if (statusCode == 429) { // Rate limited
-                    handleRateLimit();
+                } else if (statusCode == 429) { // Too Many Requests
+                    rateLimitRemaining = 0;
+                    long waitTime = calculateWaitTime();
+                    logger.warn("Rate limited (429), waiting {} seconds", waitTime);
+                    Thread.sleep(waitTime * 1000);
                     retryCount++;
-                    if (retryCount <= MAX_RETRIES) {
-                        Thread.sleep(RETRY_DELAY.toMillis() * retryCount);
-                        continue;
-                    }
-                } else if (statusCode >= 500) { // Server error - retry
+                    continue;
+                } else if (statusCode >= 500) { // Server error
+                    logger.warn("Server error {} for {} {}, retry {}/{}", 
+                        statusCode, method, endpoint, retryCount + 1, MAX_RETRIES);
                     retryCount++;
-                    if (retryCount <= MAX_RETRIES) {
-                        Thread.sleep(RETRY_DELAY.toMillis() * retryCount);
-                        continue;
+                    if (retryCount < MAX_RETRIES) {
+                        Thread.sleep(1000 * (long) Math.pow(2, retryCount)); // Exponential backoff
                     }
-                }
-
-                throw new IOException("HTTP " + method + " request failed with status " + statusCode + ": " + response.body());
-
-            } catch (IOException e) {
-                lastException = e;
-                retryCount++;
-                if (retryCount <= MAX_RETRIES) {
-                    logger.debug("Request failed, retrying ({}/{}): {}", retryCount, MAX_RETRIES, e.getMessage());
-                    Thread.sleep(RETRY_DELAY.toMillis() * retryCount);
+                    continue;
+                } else {
+                    throw new IOException("HTTP " + statusCode + " for " + method + " " + endpoint + ": " + response.body());
                 }
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 throw new IOException("Request interrupted", e);
+            } catch (Exception e) {
+                if (retryCount == MAX_RETRIES - 1) {
+                    throw new IOException("Failed to execute request after " + MAX_RETRIES + " retries: " + e.getMessage(), e);
+                }
+                retryCount++;
+                try {
+                    Thread.sleep(1000 * (long) Math.pow(2, retryCount)); // Exponential backoff
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new IOException("Request interrupted during retry", ie);
+                }
             }
         }
-        
-        throw new IOException("Request failed after " + MAX_RETRIES + " retries", lastException);
+
+        return null;
     }
 
     /**
      * Update rate limit information from response headers
      */
-    private void updateRateLimitInfo(Map<String, List<String>> headers) {
+    private void updateRateLimits(java.net.http.HttpHeaders headers) {
         try {
-            List<String> limitHeaders = headers.get("X-RateLimit-Limit");
-            List<String> remainingHeaders = headers.get("X-RateLimit-Remaining");
-            List<String> resetHeaders = headers.get("X-RateLimit-Reset");
-
-            if (limitHeaders != null && !limitHeaders.isEmpty()) {
-                currentRateLimit = Integer.parseInt(limitHeaders.get(0));
+            String remaining = headers.firstValue("X-RateLimit-Remaining").orElse(null);
+            if (remaining != null) {
+                rateLimitRemaining = Integer.parseInt(remaining);
             }
-            if (remainingHeaders != null && !remainingHeaders.isEmpty()) {
-                remainingCalls = Integer.parseInt(remainingHeaders.get(0));
+            
+            String reset = headers.firstValue("X-RateLimit-Reset").orElse(null);
+            if (reset != null) {
+                rateLimitReset = Integer.parseInt(reset);
             }
-            if (resetHeaders != null && !resetHeaders.isEmpty()) {
-                try {
-                    resetTime = Instant.ofEpochSecond(Long.parseLong(resetHeaders.get(0)));
-                } catch (NumberFormatException e) {
-                    logger.debug("Failed to parse rate limit reset time: {}", resetHeaders.get(0));
-                }
-            }
-        } catch (Exception e) {
-            logger.debug("Failed to update rate limit info: {}", e.getMessage());
+        } catch (NumberFormatException e) {
+            logger.debug("Failed to parse rate limit headers: {}", e.getMessage());
         }
     }
 
     /**
-     * Handle rate limiting by adjusting behavior
+     * Calculate wait time based on rate limits
      */
-    private void handleRateLimit() {
-        logger.warn("Rate limit exceeded, reducing polling frequency");
-        // Reduce polling frequency when rate limited
-        // This would be implemented in the handlers that use this class
-    }
-
-    /**
-     * Clean up old rate limit cache entries
-     */
-    private void cleanupRateLimitCache() {
-        Instant now = Instant.now();
-        rateLimitCache.entrySet().removeIf(entry -> entry.getValue().reset.isBefore(now));
-    }
-
-    /**
-     * Get current rate limit
-     */
-    public int getCurrentRateLimit() {
-        return currentRateLimit;
-    }
-
-    /**
-     * Get remaining calls
-     */
-    public int getRemainingCalls() {
-        return remainingCalls;
-    }
-
-    /**
-     * Get rate limit reset time
-     */
-    public Instant getResetTime() {
-        return resetTime;
-    }
-
-    /**
-     * Parse webhook event from JSON
-     */
-    public @Nullable RachioWebHookEvent parseWebhookEvent(String json) {
-        try {
-            return gson.fromJson(json, RachioWebHookEvent.class);
-        } catch (Exception e) {
-            logger.error("Failed to parse webhook event: {}", e.getMessage(), e);
-            return null;
+    private long calculateWaitTime() {
+        long currentTime = System.currentTimeMillis() / 1000;
+        long resetTime = lastRequestTime / 1000 + rateLimitReset;
+        
+        if (resetTime > currentTime) {
+            return resetTime - currentTime;
         }
+        return 0;
     }
 
     /**
-     * Parse event summary from JSON
+     * Test API connection
      */
-    public @Nullable RachioEventSummary parseEventSummary(String json) {
+    public void testConnection() throws IOException {
         try {
-            return gson.fromJson(json, RachioEventSummary.class);
-        } catch (Exception e) {
-            logger.error("Failed to parse event summary: {}", e.getMessage(), e);
-            return null;
-        }
-    }
-
-    /**
-     * Shutdown the HTTP client
-     */
-    public void shutdown() {
-        scheduler.shutdown();
-        try {
-            if (!scheduler.awaitTermination(5, TimeUnit.SECONDS)) {
-                scheduler.shutdownNow();
+            String response = executeGet("/person/info");
+            if (response == null || response.isEmpty()) {
+                throw new IOException("Empty response from API test");
             }
-        } catch (InterruptedException e) {
-            scheduler.shutdownNow();
-            Thread.currentThread().interrupt();
+            logger.debug("API connection test successful");
+        } catch (IOException e) {
+            throw new IOException("Failed to connect to Rachio API: " + e.getMessage(), e);
         }
+    }
+
+    /**
+     * Get the Gson instance
+     */
+    public Gson getGson() {
+        return gson;
+    }
+
+    /**
+     * Get remaining rate limit
+     */
+    public int getRateLimitRemaining() {
+        return rateLimitRemaining;
+    }
+
+    /**
+     * Get rate limit reset time in seconds
+     */
+    public int getRateLimitReset() {
+        return rateLimitReset;
+    }
+
+    /**
+     * Get device forecast
+     */
+    public @Nullable String getDeviceForecast(String deviceId) throws IOException {
+        return executeGet("/device/" + deviceId + "/forecast");
+    }
+
+    /**
+     * Run all zones
+     */
+    public @Nullable String runAllZones(String deviceId, int duration) throws IOException {
+        String body = String.format("{\"duration\":%d}", duration);
+        return executePut("/device/" + deviceId + "/start_all_zones", body);
+    }
+
+    /**
+     * Stop watering
+     */
+    public @Nullable String stopWatering(String deviceId) throws IOException {
+        return executePut("/device/" + deviceId + "/stop_water", null);
+    }
+
+    /**
+     * Set rain delay
+     */
+    public @Nullable String rainDelay(String deviceId, int duration) throws IOException {
+        String body = String.format("{\"duration\":%d}", duration);
+        return executePut("/device/" + deviceId + "/rain_delay", body);
+    }
+
+    /**
+     * Run next zone
+     */
+    public @Nullable String runNextZone(String deviceId) throws IOException {
+        return executePut("/device/" + deviceId + "/start_next_zone", null);
+    }
+
+    /**
+     * Start a zone
+     */
+    public @Nullable String startZone(String deviceId, String zoneId, int duration) throws IOException {
+        String body = String.format("{\"duration\":%d}", duration);
+        return executePut("/zone/" + zoneId + "/start", body);
+    }
+
+    /**
+     * Stop a zone
+     */
+    public @Nullable String stopZone(String deviceId, String zoneId) throws IOException {
+        return executePut("/zone/" + zoneId + "/stop", null);
+    }
+
+    /**
+     * Set zone enabled status
+     */
+    public @Nullable String setZoneEnabled(String deviceId, String zoneId, boolean enabled) throws IOException {
+        String body = String.format("{\"enabled\":%s}", enabled);
+        return executePut("/zone/" + zoneId + "/enabled", body);
+    }
+
+    /**
+     * Get device usage
+     */
+    public @Nullable String getDeviceUsage(String deviceId) throws IOException {
+        return executeGet("/device/" + deviceId + "/usage");
+    }
+
+    /**
+     * Get device savings
+     */
+    public @Nullable String getDeviceSavings(String deviceId) throws IOException {
+        return executeGet("/device/" + deviceId + "/savings");
+    }
+
+    /**
+     * Pause device
+     */
+    public @Nullable String pauseDevice(String deviceId) throws IOException {
+        return executePut("/device/" + deviceId + "/pause", null);
+    }
+
+    /**
+     * Get device alerts
+     */
+    public @Nullable String getDeviceAlerts(String deviceId) throws IOException {
+        return executeGet("/device/" + deviceId + "/alerts");
+    }
+
+    /**
+     * Get zone watering history
+     */
+    public @Nullable String getZoneWateringHistory(String zoneId) throws IOException {
+        return executeGet("/zone/" + zoneId + "/watering");
+    }
+
+    /**
+     * Get device schedules
+     */
+    public @Nullable String getDeviceSchedules(String deviceId) throws IOException {
+        return executeGet("/device/" + deviceId + "/schedule");
     }
 }
