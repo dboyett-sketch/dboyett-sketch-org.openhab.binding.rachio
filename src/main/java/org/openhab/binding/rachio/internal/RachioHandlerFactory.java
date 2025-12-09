@@ -2,6 +2,7 @@ package org.openhab.binding.rachio.internal;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.binding.BaseThingHandlerFactory;
@@ -39,21 +40,29 @@ public class RachioHandlerFactory extends BaseThingHandlerFactory {
 
     @Override
     public boolean supportsThingType(ThingTypeUID thingTypeUID) {
-        return SUPPORTED_THING_TYPES.contains(thingTypeUID);
+        boolean supported = SUPPORTED_THING_TYPES.contains(thingTypeUID);
+        logger.debug("Checking support for thing type {}: {}", thingTypeUID, supported);
+        return supported;
     }
 
     @Override
     protected @Nullable ThingHandler createHandler(Thing thing) {
         ThingTypeUID thingTypeUID = thing.getThingTypeUID();
 
+        logger.debug("Creating handler for thing type: {}", thingTypeUID);
+
         if (THING_TYPE_BRIDGE.equals(thingTypeUID)) {
+            logger.debug("Creating RachioBridgeHandler");
             return new RachioBridgeHandler((Bridge) thing, httpClientFactory);
         } else if (THING_TYPE_DEVICE.equals(thingTypeUID)) {
-            return new RachioDeviceHandler(thing, httpClientFactory);
+            logger.debug("Creating RachioDeviceHandler");
+            return new RachioDeviceHandler(thing);
         } else if (THING_TYPE_ZONE.equals(thingTypeUID)) {
-            return new RachioZoneHandler(thing, httpClientFactory);
+            logger.debug("Creating RachioZoneHandler");
+            return new RachioZoneHandler(thing);
         }
 
+        logger.warn("Unknown thing type: {}", thingTypeUID);
         return null;
     }
 }
