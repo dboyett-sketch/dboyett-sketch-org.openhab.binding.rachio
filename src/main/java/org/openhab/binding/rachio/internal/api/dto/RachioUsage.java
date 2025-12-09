@@ -3,13 +3,52 @@ package org.openhab.binding.rachio.internal.api.dto;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+import java.time.Instant;
+import java.util.Map;
+
+/**
+ * DTO for Water Usage Analytics
+ *
+ * @author David Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class RachioUsage {
-    public @Nullable Double totalUsage; // Total water usage in gallons
-    public @Nullable Double savings; // Water savings in gallons
-    public @Nullable Double currentUsage; // Current period usage in gallons
+    @Nullable
+    public String deviceId;
     
-    public @Nullable Double getTotalUsage() { return totalUsage; }
-    public @Nullable Double getSavings() { return savings; }
-    public @Nullable Double getCurrentUsage() { return currentUsage; }
+    @Nullable
+    public Instant periodStart;
+    
+    @Nullable
+    public Instant periodEnd;
+    
+    @Nullable
+    public Double totalGallons;
+    
+    @Nullable
+    public Double averageDailyGallons;
+    
+    @Nullable
+    public Integer totalRuns;
+    
+    @Nullable
+    public Integer totalRuntime; // seconds
+    
+    @Nullable
+    public Map<String, Double> zoneGallons; // zoneId -> gallons
+    
+    @Nullable
+    public Double savingsGallons; // compared to traditional irrigation
+    
+    @Nullable
+    public Double savingsPercentage;
+    
+    @Nullable
+    public Double environmentalImpact; // CO2 savings in kg
+    
+    @Override
+    public String toString() {
+        return "RachioUsage [deviceId=" + deviceId + ", totalGallons=" + totalGallons + 
+               ", savingsPercentage=" + savingsPercentage + "]";
+    }
 }
