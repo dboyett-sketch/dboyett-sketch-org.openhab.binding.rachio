@@ -1,19 +1,35 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.util.List;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+import java.util.List;
+
+/**
+ * DTO for Rachio Person (account)
+ *
+ * @author David Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class RachioPerson {
-    public @Nullable String id;
-    public @Nullable String username;
-    public @Nullable String email;
-    public @Nullable List<RachioDevice> devices;
+    @Nullable
+    public String id;
     
-    public @Nullable String getId() { return id; }
-    public @Nullable String getUsername() { return username; }
-    public @Nullable String getEmail() { return email; }
-    public @Nullable List<RachioDevice> getDevices() { return devices; }
+    @Nullable
+    public String username;
+    
+    @Nullable
+    public String email;
+    
+    @Nullable
+    public String fullName;
+    
+    @Nullable
+    public List<RachioDevice> devices;
+    
+    @Override
+    public String toString() {
+        return "RachioPerson [id=" + id + ", username=" + username + ", devices=" + 
+               (devices != null ? devices.size() : 0) + "]";
+    }
 }
