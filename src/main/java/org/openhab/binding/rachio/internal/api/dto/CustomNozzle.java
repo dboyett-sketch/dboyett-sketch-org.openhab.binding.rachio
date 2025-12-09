@@ -3,13 +3,30 @@ package org.openhab.binding.rachio.internal.api.dto;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
+/**
+ * DTO for Custom Nozzle data
+ *
+ * @author David Boyett - Initial contribution
+ */
 @NonNullByDefault
 public class CustomNozzle {
-    public @Nullable String id;
-    public @Nullable String name;
-    public @Nullable Double inchesPerHour;
+    @Nullable
+    public String id;
     
-    public @Nullable String getId() { return id; }
-    public @Nullable String getName() { return name; }
-    public @Nullable Double getInchesPerHour() { return inchesPerHour; }
+    @Nullable
+    public String name; // ROTOR, SPRAY, DRIP, etc.
+    
+    @Nullable
+    public Double inchesPerHour; // precipitation rate
+    
+    @Nullable
+    public Double radius; // feet
+    
+    @Nullable
+    public String description;
+    
+    @Override
+    public String toString() {
+        return "CustomNozzle [name=" + name + ", inchesPerHour=" + inchesPerHour + "]";
+    }
 }
