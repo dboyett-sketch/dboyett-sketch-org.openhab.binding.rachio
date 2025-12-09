@@ -47,6 +47,7 @@ public class RachioWebHookServletService {
     private long totalEventsReceived = 0;
     private long totalEventsProcessed = 0;
 
+    // FIXED: Removed @Nullable annotations from constructor parameters
     public RachioWebHookServletService(int port, RachioBridgeHandler bridgeHandler) {
         this.port = port;
         this.bridgeHandler = bridgeHandler;
@@ -242,6 +243,7 @@ public class RachioWebHookServletService {
             
             // Validate IP (if IP filtering enabled)
             if (security != null && bridgeHandler.getBridgeConfiguration().ipFilter != null) {
+                // Note: Fixed method call - use bridgeHandler as parameter
                 if (!security.isIpAllowed(clientIp, bridgeHandler)) {
                     logger.warn("IP denied: {}", clientIp);
                     resp.sendError(HttpServletResponse.SC_FORBIDDEN, "IP not allowed");
@@ -274,62 +276,33 @@ public class RachioWebHookServletService {
             try {
                 totalEventsProcessed++;
                 
-                // Parse the webhook event
-                RachioWebHookEvent event = gson.fromJson(payload, RachioWebHookEvent.class);
-                if (event == null) {
+                // Parse the webhook event as a Map instead of specific DTO
+                Map<String, Object> eventData = gson.fromJson(payload, Map.class);
+                if (eventData == null) {
                     logger.warn("Failed to parse webhook event");
                     return;
                 }
                 
-                logger.debug("Processing webhook event: type={}, deviceId={}", event.eventType, event.deviceId);
+                // Extract event data
+                String eventType = (String) eventData.get("eventType");
+                String deviceId = (String) eventData.get("deviceId");
+                String zoneId = (String) eventData.get("zoneId");
                 
-                // Extract data from event
-                Map<String, Object> data = extractEventData(event);
+                if (eventType == null || deviceId == null) {
+                    logger.warn("Invalid webhook event: missing required fields");
+                    return;
+                }
+                
+                logger.debug("Processing webhook event: type={}, deviceId={}", eventType, deviceId);
                 
                 // Forward to bridge handler
-                bridgeHandler.handleWebhookEvent(event.eventType, event.deviceId, event.zoneId, data);
+                bridgeHandler.handleWebhookEvent(eventType, deviceId, zoneId, eventData);
                 
                 logger.debug("Webhook event processed successfully");
                 
             } catch (Exception e) {
                 logger.error("Error processing webhook event: {}", e.getMessage(), e);
             }
-        }
-        
-        private Map<String, Object> extractEventData(RachioWebHookEvent event) {
-            Map<String, Object> data = new HashMap<>();
-            
-            // Add common fields
-            if (event.eventType != null) data.put("eventType", event.eventType);
-            if (event.deviceId != null) data.put("deviceId", event.deviceId);
-            if (event.zoneId != null) data.put("zoneId", event.zoneId);
-            if (event.timestamp != null) data.put("timestamp", event.timestamp.toString());
-            
-            // Add event-specific data
-            if (event.data != null) {
-                data.putAll(event.data);
-            }
-            
-            // Extract zone/device info from summary if available
-            if (event.summary != null) {
-                data.put("summary", event.summary);
-                
-                // Try to extract zone number from summary
-                if (event.summary.contains("Zone")) {
-                    String[] parts = event.summary.split(" ");
-                    for (String part : parts) {
-                        try {
-                            int zoneNum = Integer.parseInt(part);
-                            data.put("zoneNumber", zoneNum);
-                            break;
-                        } catch (NumberFormatException e) {
-                            // Not a number, continue
-                        }
-                    }
-                }
-            }
-            
-            return data;
         }
     }
 }
