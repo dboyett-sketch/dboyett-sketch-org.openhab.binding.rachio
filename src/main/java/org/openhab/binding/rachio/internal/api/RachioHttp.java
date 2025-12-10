@@ -400,10 +400,14 @@ public class RachioHttp {
      */
     public boolean startMultipleZones(List<String> zoneIds, List<Integer> durations) throws RachioApiException {
         logger.debug("Starting {} zones", zoneIds.size());
-        Map<String, Object> body = Map.of(
-            "zones", zoneIds.stream().map(id -> Map.of("id", id, "duration", 
-                    durations.get(zoneIds.indexOf(id)))).toArray()
-        );
+        
+        // Create zones array
+        Map<String, Object>[] zonesArray = new Map[zoneIds.size()];
+        for (int i = 0; i < zoneIds.size(); i++) {
+            zonesArray[i] = Map.of("id", zoneIds.get(i), "duration", durations.get(i));
+        }
+        
+        Map<String, Object> body = Map.of("zones", zonesArray);
         makeRequest(API_ZONE_START_MULTIPLE, "PUT", body, Map.class, false);
         return true;
     }
