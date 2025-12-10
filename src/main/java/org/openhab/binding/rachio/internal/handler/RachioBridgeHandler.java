@@ -59,6 +59,145 @@ public class RachioBridgeHandler extends RachioHandler {
         this.httpClientFactory = httpClientFactory;
     }
 
+    // ===== Listener Management Methods =====
+    
+    /**
+     * Register a status listener with this bridge.
+     *
+     * @param listener the listener to register
+     */
+    public void registerStatusListener(RachioStatusListener listener) {
+        if (listener != null) {
+            statusListeners.add(listener);
+            logger.debug("Registered status listener: {}", listener.getListenerDescription());
+        }
+    }
+
+    /**
+     * Unregister a status listener from this bridge.
+     *
+     * @param listener the listener to unregister
+     */
+    public void unregisterStatusListener(RachioStatusListener listener) {
+        if (listener != null) {
+            statusListeners.remove(listener);
+            logger.debug("Unregistered status listener: {}", listener.getListenerDescription());
+        }
+    }
+
+    /**
+     * Notify all registered listeners of a status change.
+     *
+     * @param status the new thing status
+     * @param detail the status detail
+     * @param message optional description message
+     */
+    protected void notifyStatusListeners(ThingStatus status, ThingStatusDetail detail, @Nullable String message) {
+        for (RachioStatusListener listener : statusListeners) {
+            if (listener.isActive()) {
+                try {
+                    listener.onStatusChanged(status, detail, message);
+                } catch (Exception e) {
+                    logger.warn("Error notifying status listener {}", listener.getListenerDescription(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Notify all registered listeners of a device update.
+     *
+     * @param deviceId the ID of the device that was updated
+     */
+    protected void notifyDeviceUpdated(String deviceId) {
+        for (RachioStatusListener listener : statusListeners) {
+            if (listener.isActive() && listener.isForDevice(deviceId)) {
+                try {
+                    listener.onDeviceUpdated(deviceId);
+                } catch (Exception e) {
+                    logger.warn("Error notifying device update to listener {}", listener.getListenerDescription(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Notify all registered listeners of a zone update.
+     *
+     * @param zoneId the ID of the zone that was updated
+     */
+    protected void notifyZoneUpdated(String zoneId) {
+        for (RachioStatusListener listener : statusListeners) {
+            if (listener.isActive() && listener.isForZone(zoneId)) {
+                try {
+                    listener.onZoneUpdated(zoneId);
+                } catch (Exception e) {
+                    logger.warn("Error notifying zone update to listener {}", listener.getListenerDescription(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Notify device updates to listeners (used by pollDevices)
+     */
+    private void notifyDeviceUpdates(List<RachioDevice> devices) {
+        // Simple notification - could be enhanced
+        for (RachioDevice device : devices) {
+            if (device.getId() != null) {
+                notifyDeviceUpdated(device.getId());
+            }
+        }
+        logger.debug("Notified listeners of {} device updates", devices.size());
+    }
+
+    /**
+     * Notify rate limit changes to listeners
+     */
+    private void notifyRateLimitChanged(int remaining, int total, long reset) {
+        for (RachioStatusListener listener : statusListeners) {
+            if (listener.isActive()) {
+                try {
+                    listener.onRateLimitChanged(remaining, total, reset);
+                } catch (Exception e) {
+                    logger.warn("Error notifying rate limit change to listener {}", listener.getListenerDescription(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Notify connection changes to listeners
+     */
+    private void notifyConnectionChanged(boolean connected, @Nullable String message) {
+        for (RachioStatusListener listener : statusListeners) {
+            if (listener.isActive()) {
+                try {
+                    listener.onConnectionChanged(connected, message);
+                } catch (Exception e) {
+                    logger.warn("Error notifying connection change to listener {}", listener.getListenerDescription(), e);
+                }
+            }
+        }
+    }
+
+    /**
+     * Notify errors to listeners
+     */
+    private void notifyError(String errorMessage, @Nullable Throwable exception) {
+        for (RachioStatusListener listener : statusListeners) {
+            if (listener.isActive()) {
+                try {
+                    listener.onError(errorMessage, exception);
+                } catch (Exception e) {
+                    logger.warn("Error notifying error to listener {}", listener.getListenerDescription(), e);
+                }
+            }
+        }
+    }
+
+    // ===== End Listener Management Methods =====
+
     @Override
     public void initialize() {
         logger.debug("Initializing Rachio bridge handler");
@@ -102,6 +241,7 @@ public class RachioBridgeHandler extends RachioHandler {
                             // Notify listeners
                             notifyStatusListeners(ThingStatus.ONLINE, ThingStatusDetail.NONE, 
                                     "Bridge initialized successfully");
+                            notifyConnectionChanged(true, "Bridge initialized successfully");
                             
                             // Start polling
                             startPolling();
@@ -109,6 +249,7 @@ public class RachioBridgeHandler extends RachioHandler {
                             String errorMsg = "Failed to retrieve person information from Rachio API";
                             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, errorMsg);
                             notifyStatusListeners(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, errorMsg);
+                            notifyConnectionChanged(false, errorMsg);
                         }
                     }
                 } catch (Exception e) {
@@ -116,6 +257,7 @@ public class RachioBridgeHandler extends RachioHandler {
                     logger.error(errorMsg, e);
                     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, errorMsg);
                     notifyStatusListeners(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, errorMsg);
+                    notifyError(errorMsg, e);
                 }
             });
             
@@ -124,6 +266,7 @@ public class RachioBridgeHandler extends RachioHandler {
             logger.error(errorMsg, e);
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, errorMsg);
             notifyStatusListeners(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, errorMsg);
+            notifyError(errorMsg, e);
         }
     }
 
@@ -183,6 +326,7 @@ public class RachioBridgeHandler extends RachioHandler {
             logger.error("Error handling command {} for channel {}", command, channelId, e);
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
             notifyStatusListeners(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
+            notifyError(e.getMessage(), e);
         }
     }
 
@@ -222,10 +366,16 @@ public class RachioBridgeHandler extends RachioHandler {
                 
                 // Update webhook status
                 updateWebhookStatus();
+                
+                // Notify connection is good
+                notifyConnectionChanged(true, "Successfully polled devices");
             } else {
                 logger.warn("No devices found in person info");
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, 
                         "No devices found in API response");
+                notifyStatusListeners(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, 
+                        "No devices found in API response");
+                notifyConnectionChanged(false, "No devices found in API response");
             }
         } catch (Exception e) {
             logger.error("Error polling devices", e);
@@ -233,6 +383,7 @@ public class RachioBridgeHandler extends RachioHandler {
                     "Polling error: " + e.getMessage());
             notifyStatusListeners(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, 
                     "Polling error: " + e.getMessage());
+            notifyError("Polling error: " + e.getMessage(), e);
         }
     }
 
@@ -349,18 +500,17 @@ public class RachioBridgeHandler extends RachioHandler {
                     return device;
                 }
             } catch (Exception e) {
-                logger.debug("Error fetching device {} from API: {}", deviceId, e.getMessage());
+                logger.debug("Error fetching device from API: {}", e.getMessage());
             }
         }
-        
         return null;
     }
 
     /**
-     * Get zone by ID (searches through all devices)
+     * Get zone by ID
      */
     public @Nullable RachioZone getZone(String zoneId) {
-        // First check cache
+        // Search through cached devices for the zone
         for (RachioDevice device : deviceCache.values()) {
             if (device.getZones() != null) {
                 for (RachioZone zone : device.getZones()) {
@@ -371,32 +521,39 @@ public class RachioBridgeHandler extends RachioHandler {
             }
         }
         
-        // If not in cache, poll devices to refresh cache
-        pollDevices();
-        
-        // Check again after poll
-        for (RachioDevice device : deviceCache.values()) {
-            if (device.getZones() != null) {
-                for (RachioZone zone : device.getZones()) {
-                    if (zoneId.equals(zone.getId())) {
-                        return zone;
+        // If not found in cache, try to find via API
+        RachioHttp localHttpClient = rachioHttp;
+        if (localHttpClient != null) {
+            try {
+                // We need to find which device this zone belongs to first
+                for (RachioDevice device : deviceCache.values()) {
+                    if (device.getZones() != null) {
+                        for (RachioZone zone : device.getZones()) {
+                            if (zoneId.equals(zone.getId())) {
+                                return zone;
+                            }
+                        }
                     }
                 }
+            } catch (Exception e) {
+                logger.debug("Error fetching zone from cache: {}", e.getMessage());
             }
         }
-        
         return null;
     }
 
     /**
-     * Get all devices for discovery
+     * Get the RachioHttp instance
      */
-    public List<RachioDevice> discoverDevices() {
-        // Ensure cache is populated
-        if (deviceCache.isEmpty()) {
-            pollDevices();
-        }
-        return new ArrayList<>(deviceCache.values());
+    public @Nullable RachioHttp getRachioHttp() {
+        return rachioHttp;
+    }
+
+    /**
+     * Get the RachioSecurity instance
+     */
+    public @Nullable RachioSecurity getRachioSecurity() {
+        return rachioSecurity;
     }
 
     /**
@@ -406,138 +563,89 @@ public class RachioBridgeHandler extends RachioHandler {
         return personId;
     }
 
-    /**
-     * Get bridge configuration
-     */
-    public @Nullable RachioBridgeConfiguration getBridgeConfig() {
-        return config;
-    }
+    // ===== RachioStatusListener interface implementations =====
+    // Note: RachioBridgeHandler extends RachioHandler which implements RachioStatusListener
+    // These are the bridge-specific implementations
 
-    /**
-     * Status listener management
-     */
-    public void registerStatusListener(RachioStatusListener listener) {
-        if (listener != null) {
-            statusListeners.add(listener);
-            logger.debug("Registered status listener: {}", listener.getClass().getSimpleName());
-        }
-    }
-
-    public void unregisterStatusListener(RachioStatusListener listener) {
-        if (listener != null) {
-            statusListeners.remove(listener);
-            logger.debug("Unregistered status listener: {}", listener.getClass().getSimpleName());
-        }
-    }
-
-    /**
-     * Notify all status listeners of device updates
-     */
-    private void notifyDeviceUpdates(List<RachioDevice> devices) {
-        for (RachioStatusListener listener : statusListeners) {
-            try {
-                for (RachioDevice device : devices) {
-                    listener.onDeviceUpdated(device.getId());
-                }
-            } catch (Exception e) {
-                logger.warn("Error notifying status listener {}", listener.getClass().getSimpleName(), e);
-            }
-        }
-    }
-
-    /**
-     * Notify all status listeners of rate limit changes
-     */
-    private void notifyRateLimitChanged(int remainingRequests, int limit, long resetTime) {
-        for (RachioStatusListener listener : statusListeners) {
-            try {
-                listener.onRateLimitChanged(remainingRequests, limit, resetTime);
-            } catch (Exception e) {
-                logger.warn("Error notifying rate limit change to listener {}", 
-                        listener.getClass().getSimpleName(), e);
-            }
-        }
-    }
-
-    /**
-     * Notify all status listeners of a status change
-     */
-    protected void notifyStatusListeners(ThingStatus status, ThingStatusDetail detail, @Nullable String message) {
-        for (RachioStatusListener listener : statusListeners) {
-            try {
-                listener.onStatusChanged(status, detail, message);
-            } catch (Exception e) {
-                logger.warn("Error notifying status listener {}", listener.getClass().getSimpleName(), e);
-            }
-        }
-    }
-
-    /**
-     * Get all status listeners (for testing/debugging)
-     */
-    protected Set<RachioStatusListener> getStatusListeners() {
-        return new HashSet<>(statusListeners);
-    }
-
-    /**
-     * Clear device cache (force refresh on next poll)
-     */
-    public void clearDeviceCache() {
-        deviceCache.clear();
-        logger.debug("Device cache cleared");
-        
-        // Also clear HTTP client cache if available
-        RachioHttp localHttpClient = rachioHttp;
-        if (localHttpClient != null) {
-            localHttpClient.clearCache();
-        }
-    }
-
-    /**
-     * Check if webhook is configured
-     */
-    public boolean isWebhookConfigured() {
-        RachioBridgeConfiguration localConfig = config;
-        return localConfig != null && localConfig.webhookUrl != null && !localConfig.webhookUrl.isEmpty();
-    }
-
-    /**
-     * Get webhook URL
-     */
-    public @Nullable String getWebhookUrl() {
-        RachioBridgeConfiguration localConfig = config;
-        return localConfig != null ? localConfig.webhookUrl : null;
-    }
-
-    /**
-     * Get webhook secret
-     */
-    public @Nullable String getWebhookSecret() {
-        RachioBridgeConfiguration localConfig = config;
-        return localConfig != null ? localConfig.webhookSecret : null;
-    }
-
-    /**
-     * Get current rate limit info
-     */
-    public Map<String, Object> getRateLimitInfo() {
-        Map<String, Object> info = new HashMap<>();
-        info.put("remaining", rateLimitRemaining);
-        info.put("total", rateLimitTotal);
-        info.put("reset", rateLimitReset);
-        info.put("percentage", rateLimitTotal > 0 ? 
-                (int) ((rateLimitRemaining / (double) rateLimitTotal) * 100) : 0);
-        info.put("status", rateLimitRemaining <= RATE_LIMIT_THRESHOLD_CRITICAL ? "CRITICAL" :
-                         rateLimitRemaining <= RATE_LIMIT_THRESHOLD_LOW ? "LOW" : "NORMAL");
-        return info;
-    }
-
-    /**
-     * Update bridge status and notify listeners
-     */
     @Override
-    protected void updateStatus(ThingStatus status, ThingStatusDetail statusDetail, @Nullable String description) {
-        super.updateStatus(status, statusDetail, description);
-        notifyStatusListeners(status, statusDetail, description);
+    public void onDeviceUpdated(String deviceId) {
+        // Bridge doesn't need to react to device updates from other listeners
+        logger.debug("Device {} update received at bridge", deviceId);
+    }
+
+    @Override
+    public void onZoneUpdated(String zoneId) {
+        // Bridge doesn't need to react to zone updates from other listeners
+        logger.debug("Zone {} update received at bridge", zoneId);
+    }
+
+    @Override
+    public void onWebhookEvent(String deviceId, String eventType, 
+                               @Nullable String subType, 
+                               @Nullable Map<String, Object> eventData) {
+        // Handle webhook events at bridge level
+        logger.debug("Webhook event {} received for device {} at bridge", eventType, deviceId);
+        
+        // Forward to appropriate device/zone handlers via notifications
+        notifyDeviceUpdated(deviceId);
+        
+        // If event contains zone information, also notify zone handlers
+        if (eventData != null && eventData.containsKey("zoneId")) {
+            Object zoneIdObj = eventData.get("zoneId");
+            if (zoneIdObj instanceof String) {
+                notifyZoneUpdated((String) zoneIdObj);
+            }
+        }
+    }
+
+    @Override
+    public void onRateLimitChanged(int remainingRequests, int limit, long resetTime) {
+        // Update bridge's rate limit state
+        this.rateLimitRemaining = remainingRequests;
+        this.rateLimitTotal = limit;
+        this.rateLimitReset = resetTime;
+        
+        updateRateLimitChannels();
+    }
+
+    @Override
+    public void onConnectionChanged(boolean connected, @Nullable String message) {
+        // Bridge handles its own connection status
+        if (!connected) {
+            logger.warn("Connection change notified to bridge: {}", message);
+        }
+    }
+
+    @Override
+    public void onError(String errorMessage, @Nullable Throwable exception) {
+        // Bridge handles its own errors
+        logger.error("Error notified to bridge: {}", errorMessage, exception);
+    }
+
+    @Override
+    public @Nullable String getThingId() {
+        return getThing().getUID().getId();
+    }
+
+    @Override
+    public boolean isForDevice(String deviceId) {
+        // Bridge handles all devices
+        return true;
+    }
+    
+    @Override
+    public boolean isActive() {
+        return getThing().getStatus() != ThingStatus.UNINITIALIZED;
+    }
+    
+    @Override
+    public String getListenerDescription() {
+        return "RachioBridgeHandler[" + getThing().getUID() + "]";
+    }
+    
+    @Override
+    public boolean isForZone(String zoneId) {
+        // Bridge handles all zones
+        return true;
     }
 }
