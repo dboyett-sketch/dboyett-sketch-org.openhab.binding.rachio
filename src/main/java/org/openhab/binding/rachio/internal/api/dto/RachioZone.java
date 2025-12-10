@@ -3,100 +3,65 @@ package org.openhab.binding.rachio.internal.api.dto;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
-import java.util.HashMap;
-import java.util.Map;
-
 /**
- * DTO for Rachio Zone
- *
- * @author David Boyett - Initial contribution
+ * Data transfer object for Rachio zones.
  */
 @NonNullByDefault
 public class RachioZone {
-    @Nullable
-    public String id;
+    private String id = "";
+    private String name = "";
+    private int zoneNumber;
+    private boolean enabled;
+    private int runtime;
     
-    @Nullable
-    public String deviceId;
+    // Missing fields from compilation errors
+    private @Nullable Long lastWateredDate;
+    private @Nullable CustomSoil soil;
+    private @Nullable CustomCrop crop;
+    private @Nullable CustomNozzle nozzle;
+    private @Nullable String slope;
+    private @Nullable String shade;
     
-    @Nullable
-    public Integer zoneNumber;
+    // Getters and setters for existing fields
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
     
-    @Nullable
-    public String name;
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
     
-    @Nullable
-    public Boolean enabled;
+    public int getZoneNumber() { return zoneNumber; }
+    public void setZoneNumber(int zoneNumber) { this.zoneNumber = zoneNumber; }
     
-    @Nullable
-    public Integer runtime;
+    public boolean isEnabled() { return enabled; }
+    public void setEnabled(boolean enabled) { this.enabled = enabled; }
     
-    @Nullable
-    public String status; // STARTED, STOPPED, COMPLETED
+    public int getRuntime() { return runtime; }
+    public void setRuntime(int runtime) { this.runtime = runtime; }
     
-    @Nullable
-    public CustomSoil customSoil;
+    // Getters and setters for new fields
+    public @Nullable Long getLastWateredDate() { return lastWateredDate; }
+    public void setLastWateredDate(@Nullable Long lastWateredDate) { this.lastWateredDate = lastWateredDate; }
     
-    @Nullable
-    public CustomCrop customCrop;
+    public @Nullable CustomSoil getSoil() { return soil; }
+    public void setSoil(@Nullable CustomSoil soil) { this.soil = soil; }
     
-    @Nullable
-    public CustomNozzle customNozzle;
+    public @Nullable CustomCrop getCrop() { return crop; }
+    public void setCrop(@Nullable CustomCrop crop) { this.crop = crop; }
     
-    @Nullable
-    public CustomSlope customSlope;
+    public @Nullable CustomNozzle getNozzle() { return nozzle; }
+    public void setNozzle(@Nullable CustomNozzle nozzle) { this.nozzle = nozzle; }
     
-    @Nullable
-    public CustomShade customShade;
+    public @Nullable String getSlope() { return slope; }
+    public void setSlope(@Nullable String slope) { this.slope = slope; }
     
-    @Nullable
-    public Double rootDepth; // inches
+    public @Nullable String getShade() { return shade; }
+    public void setShade(@Nullable String shade) { this.shade = shade; }
     
-    @Nullable
-    public Double efficiency; // percentage
-    
-    @Nullable
-    public Map<Integer, Double> waterAdjustment; // levels 1-5
-    
-    @Nullable
-    public Double area; // square feet
-    
-    // Additional professional data fields
-    @Nullable
-    public Double availableWater;
-    
-    @Nullable
-    public Double cropCoefficient;
-    
-    @Nullable
-    public Double nozzleInchesPerHour;
-    
-    @Nullable
-    public String soilType;
-    
-    @Nullable
-    public String cropType;
-    
-    @Nullable
-    public String nozzleType;
-    
-    @Nullable
-    public String slopeType;
-    
-    @Nullable
-    public String shadeType;
-
     @Override
     public String toString() {
-        return "RachioZone [id=" + id + ", name=" + name + ", zoneNumber=" + zoneNumber + ", enabled=" + enabled + 
-               ", runtime=" + runtime + ", status=" + status + ", area=" + area + "]";
-    }
-    
-    // Helper method to get water adjustment level
-    public double getWaterAdjustmentLevel(int level) {
-        if (waterAdjustment != null && waterAdjustment.containsKey(level)) {
-            return waterAdjustment.get(level);
-        }
-        return 0.0;
+        return "RachioZone [id=" + id + ", name=" + name + ", zoneNumber=" + zoneNumber + 
+               ", enabled=" + enabled + ", runtime=" + runtime + ", lastWateredDate=" + lastWateredDate + 
+               ", soil=" + soil + ", crop=" + crop + ", nozzle=" + nozzle + 
+               ", slope=" + slope + ", shade=" + shade + "]";
     }
 }
