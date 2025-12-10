@@ -139,7 +139,7 @@ public abstract class RachioHandler extends BaseThingHandler implements RachioSt
         }
         
         try {
-            Map<String, String> rateLimits = rachioHttp.getRateLimits();
+            Map<String, Integer> rateLimits = rachioHttp.getRateLimits();
             if (rateLimits != null) {
                 String remainingStr = rateLimits.get(RachioBindingConstants.HEADER_RATE_LIMIT_REMAINING);
                 String limitStr = rateLimits.get(RachioBindingConstants.HEADER_RATE_LIMIT_LIMIT);
