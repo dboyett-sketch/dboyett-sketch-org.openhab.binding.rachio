@@ -364,4 +364,20 @@ public class RachioDeviceHandler extends RachioHandler {
         RachioDeviceConfiguration localConfig = config;
         return localConfig != null && deviceId.equals(localConfig.getDeviceId());
     }
+    
+    @Override
+    public boolean isActive() {
+        return getThing().getStatus() != ThingStatus.UNINITIALIZED;
+    }
+    
+    @Override
+    public String getListenerDescription() {
+        return "RachioDeviceHandler[" + getThing().getUID() + "]";
+    }
+    
+    @Override
+    public boolean isForZone(String zoneId) {
+        // Device handlers don't handle zones
+        return false;
+    }
 }
