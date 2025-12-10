@@ -2,6 +2,8 @@ package org.openhab.binding.rachio.internal.config;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.core.config.core.Configuration;
+import org.openhab.core.config.core.ParameterOption;
 
 /**
  * The {@link RachioBridgeConfiguration} class contains fields mapping thing configuration parameters.
@@ -13,6 +15,12 @@ public class RachioBridgeConfiguration {
 
     @Nullable
     public String apiKey;
+    
+    @Nullable
+    public String personId;
+    
+    @Nullable
+    public String secretKey;
     
     @Nullable
     public Integer refresh;
@@ -40,10 +48,18 @@ public class RachioBridgeConfiguration {
     
     @Nullable
     public Integer defaultRuntime;
+    
+    @Nullable
+    public Boolean useAwsIpRanges; // ADDED: Optional AWS IP range verification
+    
+    @Nullable
+    public String customIpRanges;  // ADDED: Custom IP ranges for filtering
 
     @Override
     public String toString() {
         return "RachioBridgeConfiguration [apiKey=" + (apiKey != null ? "[PROTECTED]" : "null") 
+            + ", personId=" + personId
+            + ", secretKey=" + (secretKey != null ? "[PROTECTED]" : "null")
             + ", refresh=" + refresh 
             + ", webhookPort=" + webhookPort 
             + ", webhookEnabled=" + webhookEnabled 
@@ -52,6 +68,8 @@ public class RachioBridgeConfiguration {
             + ", callbackUrl=" + callbackUrl 
             + ", ipFilter=" + ipFilter 
             + ", clearAllCallbacks=" + clearAllCallbacks 
-            + ", defaultRuntime=" + defaultRuntime + "]";
+            + ", defaultRuntime=" + defaultRuntime 
+            + ", useAwsIpRanges=" + useAwsIpRanges
+            + ", customIpRanges=" + customIpRanges + "]";
     }
 }
