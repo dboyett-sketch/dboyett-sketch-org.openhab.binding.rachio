@@ -168,12 +168,12 @@ public class RachioDeviceHandler extends RachioHandler {
 
     private void updateDeviceChannels(RachioDevice device) {
         // Update status channel
-        if (device.status != null) {
+        if (device.getStatus != null) {
             updateState(CHANNEL_DEVICE_STATUS, new StringType(device.getStatus));
         }
         
         // Update online status
-        if (device.online != null) {
+        if (device.getOnline != null) {
             updateState(CHANNEL_DEVICE_ONLINE, device.getOnline ? OnOffType.ON : OnOffType.OFF);
         }
         
