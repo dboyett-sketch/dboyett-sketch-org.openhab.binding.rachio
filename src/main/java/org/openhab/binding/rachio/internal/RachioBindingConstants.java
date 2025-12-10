@@ -59,15 +59,14 @@ public class RachioBindingConstants {
     public static final String CHANNEL_ZONE_AREA = "zoneArea";
     
     // === MISSING CONSTANTS FROM COMPILATION ERRORS ===
-    
-    // Device Handler is looking for these constants (from errors):
+    // Device Handler is looking for these constants:
     public static final String CHANNEL_STOP_WATERING = "stopWatering";
     public static final String CHANNEL_PAUSE_DEVICE = "pauseDevice";
     public static final String CHANNEL_ZONES_ENABLED = "zonesEnabled";
     public static final String CHANNEL_RAIN_DELAY_EXPIRATION = "rainDelayExpiration";
     public static final String CHANNEL_FIRMWARE_VERSION = "firmwareVersion";
     
-    // Zone Handler is looking for these constants (from errors):
+    // Zone Handler is looking for these constants:
     public static final String CHANNEL_ZONE_START = "zoneStart";
     public static final String CHANNEL_ZONE_STOP = "zoneStop";
     public static final String CHANNEL_ZONE_RUNTIME = "zoneRuntime";
@@ -75,14 +74,11 @@ public class RachioBindingConstants {
     public static final String CHANNEL_ZONE_LAST_WATERED = "zoneLastWatered";
     public static final String CHANNEL_ZONE_NUMBER = "zoneNumber";
     public static final String CHANNEL_ZONE_SOIL_WATER = "zoneSoilWater";
-    public static final String CHANNEL_ZONE_CROP_COEFFICIENT = "cropCoefficient";
-    public static final String CHANNEL_ZONE_NOZZLE_RATE = "nozzleRate";
     public static final String CHANNEL_ZONE_EFFICIENCY = "zoneEfficiency";
     public static final String CHANNEL_ZONE_WATER_ADJUSTMENT_PREFIX = "zoneWaterAdjustment";
     
-    // Zone Configuration needs this (from error):
+    // Zone Configuration needs this:
     public static final String CONFIG_DEFAULT_DURATION = "defaultDuration";
-    
     // === END OF MISSING CONSTANTS ===
     
     // Bridge Configuration Properties
