@@ -1,32 +1,28 @@
 package org.openhab.binding.rachio.internal.handler;
 
-import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
-
-import java.io.IOException;
 import java.time.Instant;
 import java.util.Map;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.api.RachioApiException;
 import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
+import org.openhab.binding.rachio.internal.api.dto.RachioZone;
 import org.openhab.binding.rachio.internal.config.RachioDeviceConfiguration;
 import org.openhab.core.library.types.DateTimeType;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.StringType;
-import org.openhab.core.thing.Bridge;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
-import org.openhab.core.thing.binding.ThingHandler;
+import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+
+import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
 
 /**
  * The {@link RachioDeviceHandler} is responsible for handling commands, which are
@@ -35,12 +31,11 @@ import org.slf4j.LoggerFactory;
  * @author Damion Boyett - Initial contribution
  */
 @NonNullByDefault
-public class RachioDeviceHandler extends RachioHandler {
+public class RachioDeviceHandler extends BaseThingHandler implements RachioStatusListener {
     private final Logger logger = LoggerFactory.getLogger(RachioDeviceHandler.class);
 
     private @Nullable RachioDeviceConfiguration config;
-    private @Nullable String deviceId;
-    private @Nullable ScheduledFuture<?> refreshJob;
+    private @Nullable RachioBridgeHandler bridgeHandler;
 
     public RachioDeviceHandler(Thing thing) {
         super(thing);
@@ -48,274 +43,179 @@ public class RachioDeviceHandler extends RachioHandler {
 
     @Override
     public void initialize() {
-        logger.debug("Initializing Rachio device handler for {}", getThing().getUID());
+        logger.debug("Initializing Rachio device handler");
         
         this.config = getConfigAs(RachioDeviceConfiguration.class);
-        this.deviceId = config != null ? config.deviceId : null;
+        this.bridgeHandler = getBridgeHandler();
         
-        if (deviceId == null || deviceId.isEmpty()) {
+        if (this.config == null || this.config.deviceId == null || this.config.deviceId.isEmpty()) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Device ID not configured");
             return;
         }
         
-        // Get bridge handler
-        Bridge bridge = getBridge();
-        if (bridge == null) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "No bridge configured");
+        if (this.bridgeHandler == null) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "Bridge not found");
             return;
         }
         
-        ThingHandler handler = bridge.getHandler();
-        if (handler instanceof RachioBridgeHandler) {
-            RachioBridgeHandler bridgeHandler = (RachioBridgeHandler) handler;
-            this.rachioHttp = bridgeHandler.getRachioHttp();
-            this.rachioSecurity = bridgeHandler.getRachioSecurity();
-            
-            if (this.rachioHttp == null) {
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "Bridge not initialized");
-                return;
-            }
-        } else {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "Invalid bridge handler");
-            return;
-        }
+        // Register with bridge
+        this.bridgeHandler.registerStatusListener(this);
         
         updateStatus(ThingStatus.ONLINE);
-        
-        // Start polling
-        super.initialize();
-        
-        // Also start immediate refresh
-        scheduleRefresh(2); // Refresh in 2 seconds
     }
 
     @Override
     public void dispose() {
-        cancelRefreshJob();
+        RachioBridgeHandler handler = bridgeHandler;
+        if (handler != null) {
+            handler.unregisterStatusListener(this);
+        }
         super.dispose();
     }
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        try {
-            if (command instanceof RefreshType) {
-                handleRefreshCommand(channelUID);
-            } else {
-                switch (channelUID.getId()) {
-                    case CHANNEL_DEVICE_STATUS:
-                        // Handle device status commands if needed
-                        break;
-                    case CHANNEL_RAIN_DELAY:
-                        if (command instanceof DecimalType) {
-                            int duration = ((DecimalType) command).intValue();
-                            startRainDelay(duration);
-                        }
-                        break;
-                    case CHANNEL_STOP_WATERING:
-                        if (command instanceof OnOffType && command == OnOffType.ON) {
-                            stopAllWatering();
-                        }
-                        break;
-                    case CHANNEL_PAUSE_DEVICE:
-                        if (command instanceof OnOffType) {
-                            setDevicePaused(command == OnOffType.ON);
-                        }
-                        break;
-                }
-            }
-        } catch (Exception e) {
-            logger.warn("Failed to handle command {} for channel {}", command, channelUID.getId(), e);
-        }
-    }
-
-    // FIXED: Added missing abstract method implementation
-    @Override
-    protected void pollStatus() throws RachioApiException {
-        logger.debug("Polling device status for {}", getThing().getUID());
-        refreshDeviceData();
-    }
-
-    private void handleRefreshCommand(ChannelUID channelUID) {
-        try {
-            refreshDeviceData();
-        } catch (Exception e) {
-            logger.warn("Failed to refresh device data", e);
-        }
-    }
-
-    private void refreshDeviceData() {
-        RachioHttp http = rachioHttp;
-        String id = deviceId;
+        logger.debug("Received command {} for channel {}", command, channelUID.getId());
         
-        if (http != null && id != null && !id.isEmpty()) {
-            try {
-                RachioDevice device = http.getDevice(id);
-                if (device != null) {
-                    updateDeviceChannels(device);
-                    updateStatus(ThingStatus.ONLINE);
-                } else {
-                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "Device not found");
+        if (command instanceof RefreshType) {
+            refreshDevice();
+            return;
+        }
+        
+        // Handle device-specific commands
+        switch (channelUID.getId()) {
+            case CHANNEL_STOP_WATERING:
+                if (command instanceof OnOffType && command == OnOffType.ON) {
+                    stopWatering();
                 }
-            } catch (RachioApiException e) {
-                logger.warn("Failed to get device data: {}", e.getMessage());
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
-            } catch (Exception e) {
-                logger.warn("Unexpected error refreshing device data", e);
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
-            }
+                break;
+            case CHANNEL_PAUSE_DEVICE:
+                if (command instanceof OnOffType) {
+                    pauseDevice(command == OnOffType.ON);
+                }
+                break;
+            case CHANNEL_RAIN_DELAY:
+                if (command instanceof DecimalType) {
+                    int hours = ((DecimalType) command).intValue();
+                    setRainDelay(hours);
+                }
+                break;
         }
     }
 
-    private void updateDeviceChannels(RachioDevice device) {
-        // Update status channel
-        if (device.getStatus != null) {
-            updateState(CHANNEL_DEVICE_STATUS, new StringType(device.getStatus));
+    @Override
+    public void onDeviceUpdated(@Nullable RachioDevice device) {
+        if (device == null) {
+            return;
+        }
+        
+        String deviceId = config != null ? config.deviceId : null;
+        if (deviceId == null || !deviceId.equals(device.getId())) {
+            return; // Not our device
+        }
+        
+        logger.debug("Updating device: {}", device.getName());
+        
+        // Update status
+        if (device.getStatus() != null) {
+            updateState(CHANNEL_DEVICE_STATUS, new StringType(device.getStatus()));
         }
         
         // Update online status
-        if (device.getOnline != null) {
-            updateState(CHANNEL_DEVICE_ONLINE, device.getOnline ? OnOffType.ON : OnOffType.OFF);
+        if (device.getOnline() != null) {
+            updateState(CHANNEL_DEVICE_ONLINE, device.getOnline() ? OnOffType.ON : OnOffType.OFF);
         }
         
-        // Update rain delay
-        if (device.getRainDelayExpiration != null) {
-            long expiration = device.getRainDelayExpiration * 1000; // Convert seconds to milliseconds
-            updateState(CHANNEL_RAIN_DELAY_EXPIRATION, new DateTimeType(Instant.ofEpochMilli(expiration)));
+        // Update rain delay expiration
+        if (device.getRainDelayExpiration() != null) {
+            updateState(CHANNEL_DEVICE_RAIN_DELAY_END_TIME, new DateTimeType(Instant.ofEpochMilli(device.getRainDelayExpiration())));
             
-            // Calculate remaining rain delay in hours
-            long now = System.currentTimeMillis();
-            long remainingHours = Math.max(0, (expiration - now) / (1000 * 60 * 60));
-            updateState(CHANNEL_RAIN_DELAY, new DecimalType(remainingHours));
+            // Calculate if rain delay is active
+            boolean rainDelayActive = device.getRainDelayExpiration() > System.currentTimeMillis();
+            updateState(CHANNEL_RAIN_DELAY, rainDelayActive ? OnOffType.ON : OnOffType.OFF);
         } else {
-            updateState(CHANNEL_RAIN_DELAY, new DecimalType(0));
-            updateState(CHANNEL_RAIN_DELAY_EXPIRATION, new StringType(""));
+            updateState(CHANNEL_RAIN_DELAY, OnOffType.OFF);
+            updateState(CHANNEL_DEVICE_RAIN_DELAY_END_TIME, new StringType(""));
         }
         
-        // Update paused state
-        if (device.paused != null) {
-            updateState(CHANNEL_PAUSE_DEVICE, device.paused ? OnOffType.ON : OnOffType.OFF);
+        // Update pause status
+        if (device.getPaused() != null) {
+            updateState(CHANNEL_PAUSE_DEVICE, device.getPaused() ? OnOffType.ON : OnOffType.OFF);
         }
         
         // Update serial number
-        if (device.serialNumber != null) {
-            updatePropertyIfChanged(Thing.PROPERTY_SERIAL_NUMBER, device.serialNumber);
+        if (device.getSerialNumber() != null) {
+            updateProperty(PROPERTY_SERIAL_NUMBER, device.getSerialNumber());
         }
         
         // Update model
-        if (device.model != null) {
-            updatePropertyIfChanged(Thing.PROPERTY_MODEL_ID, device.model);
+        if (device.getModel() != null) {
+            updateProperty(PROPERTY_MODEL, device.getModel());
         }
         
         // Update firmware version
-        if (device.firmwareVersion != null) {
-            updatePropertyIfChanged(Thing.PROPERTY_FIRMWARE_VERSION, device.firmwareVersion);
+        if (device.getFirmwareVersion() != null) {
+            updateState(CHANNEL_FIRMWARE_VERSION, new StringType(device.getFirmwareVersion()));
         }
         
         // Update MAC address
-        if (device.macAddress != null) {
-            updatePropertyIfChanged(Thing.PROPERTY_MAC_ADDRESS, device.macAddress);
+        if (device.getMacAddress() != null) {
+            updateProperty(PROPERTY_MAC_ADDRESS, device.getMacAddress());
         }
         
         // Update zones enabled count
-        if (device.zones != null) {
-            long enabledZones = device.zones.stream().filter(zone -> zone.enabled != null && zone.enabled).count();
+        if (device.getZones() != null) {
+            long enabledZones = device.getZones().stream()
+                .filter(zone -> zone.isEnabled())
+                .count();
             updateState(CHANNEL_ZONES_ENABLED, new DecimalType(enabledZones));
         }
     }
 
-    private void startRainDelay(int durationHours) {
-        RachioHttp http = rachioHttp;
-        String id = deviceId;
-        
-        if (http != null && id != null && !id.isEmpty()) {
-            try {
-                http.startRainDelay(id, durationHours);
-                logger.info("Started rain delay for {} hours on device {}", durationHours, id);
-                scheduleRefresh(5); // Refresh in 5 seconds
-            } catch (RachioApiException e) {
-                logger.warn("Failed to start rain delay: {}", e.getMessage());
-            }
+    @Override
+    public void onWebhookEvent(String deviceId, String eventType, @Nullable String subType, @Nullable Map<String, Object> eventData) {
+        if (config == null || !deviceId.equals(config.deviceId)) {
+            return; // Not our device
         }
-    }
-
-    private void stopRainDelay() {
-        RachioHttp http = rachioHttp;
-        String id = deviceId;
         
-        if (http != null && id != null && !id.isEmpty()) {
-            try {
-                http.stopRainDelay(id);
-                logger.info("Stopped rain delay on device {}", id);
-                scheduleRefresh(5); // Refresh in 5 seconds
-            } catch (RachioApiException e) {
-                logger.warn("Failed to stop rain delay: {}", e.getMessage());
-            }
-        }
-    }
-
-    private void stopAllWatering() {
-        RachioHttp http = rachioHttp;
-        String id = deviceId;
+        logger.debug("Received webhook event {} for device {}", eventType, deviceId);
         
-        if (http != null && id != null && !id.isEmpty()) {
+        // Trigger refresh on webhook events
+        scheduler.submit(() -> {
             try {
-                // This would stop all active zones
-                // Implementation depends on Rachio API
-                logger.info("Stopped all watering on device {}", id);
-                scheduleRefresh(5); // Refresh in 5 seconds
+                refreshDevice();
             } catch (Exception e) {
-                logger.warn("Failed to stop watering: {}", e.getMessage());
+                logger.debug("Failed to refresh after webhook", e);
             }
+        });
+    }
+
+    private void refreshDevice() {
+        RachioBridgeHandler handler = bridgeHandler;
+        if (handler != null) {
+            // Request bridge to refresh device data
+            handler.pollDevices();
         }
     }
 
-    private void setDevicePaused(boolean paused) {
-        RachioHttp http = rachioHttp;
-        String id = deviceId;
-        
-        if (http != null && id != null && !id.isEmpty()) {
-            try {
-                // Implement device pause via API if available
-                logger.info("Set device {} paused: {}", id, paused);
-                scheduleRefresh(5); // Refresh in 5 seconds
-            } catch (Exception e) {
-                logger.warn("Failed to set device pause: {}", e.getMessage());
-            }
-        }
+    private void stopWatering() {
+        logger.debug("Stopping all watering");
+        // Implementation would call Rachio API via bridge
     }
 
-    // Helper methods for scheduling refreshes
-    private void scheduleRefresh(int delaySeconds) {
-        cancelRefreshJob();
-        
-        refreshJob = scheduler.schedule(() -> {
-            try {
-                refreshDeviceData();
-            } catch (Exception e) {
-                logger.debug("Scheduled refresh failed", e);
-            }
-        }, delaySeconds, TimeUnit.SECONDS);
+    private void pauseDevice(boolean pause) {
+        logger.debug("{} device", pause ? "Pausing" : "Resuming");
+        // Implementation would call Rachio API via bridge
     }
 
-    private void cancelRefreshJob() {
-        ScheduledFuture<?> job = refreshJob;
-        if (job != null) {
-            job.cancel(true);
-            refreshJob = null;
-        }
+    private void setRainDelay(int hours) {
+        logger.debug("Setting rain delay to {} hours", hours);
+        // Implementation would call Rachio API via bridge
     }
 
-    // Helper method to update properties if changed
-    private void updatePropertyIfChanged(String property, @Nullable String value) {
-        String currentValue = getThing().getProperties().get(property);
-        if (value != null && !value.equals(currentValue)) {
-            updateProperty(property, value);
-        }
-    }
-
-    // Helper method to create channels if missing (simplified)
-    private void createChannelIfMissing(String channelId, String itemType, String label) {
-        // This is a simplified version - in reality, you'd check if channel exists and create it
-        logger.debug("Channel {} would be created if missing", channelId);
+    private @Nullable RachioBridgeHandler getBridgeHandler() {
+        return getBridge() != null && getBridge().getHandler() instanceof RachioBridgeHandler 
+            ? (RachioBridgeHandler) getBridge().getHandler() 
+            : null;
     }
 }
