@@ -388,7 +388,7 @@ public class RachioZoneHandler extends RachioHandler {
         try {
             localHttpClient.stopZone(zoneId);
             
-            // Schedule refresh
+            // Schedule refresh to get updated status
             scheduler.schedule(() -> {
                 scheduler.execute(this::pollStatus);
             }, 5, java.util.concurrent.TimeUnit.SECONDS);
@@ -397,15 +397,6 @@ public class RachioZoneHandler extends RachioHandler {
             logger.error("Error stopping zone", e);
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
-    }
-
-    /**
-     * Get the current zone data
-     *
-     * @return zone data or null
-     */
-    public @Nullable RachioZone getZone() {
-        return zone;
     }
 
     /**
@@ -423,7 +414,12 @@ public class RachioZoneHandler extends RachioHandler {
     
     @Override
     public void onDeviceUpdated(String deviceId) {
-        // Zone handler doesn't need to react to device updates directly
+        // Zone handler doesn't need to react to device updates unless it's our parent device
+        RachioZoneConfiguration localConfig = config;
+        if (localConfig != null && localConfig.getDeviceId() != null && localConfig.getDeviceId().equals(deviceId)) {
+            logger.debug("Parent device {} update received via listener", deviceId);
+            scheduler.execute(this::pollStatus);
+        }
     }
 
     @Override
@@ -439,8 +435,11 @@ public class RachioZoneHandler extends RachioHandler {
     public void onWebhookEvent(String deviceId, String eventType, 
                                @Nullable String subType, 
                                @Nullable Map<String, Object> eventData) {
-        // Zone handler might react to zone-specific webhook events
-        logger.debug("Webhook event {} received for device {}", eventType, deviceId);
+        RachioZoneConfiguration localConfig = config;
+        if (localConfig != null && localConfig.getDeviceId() != null && localConfig.getDeviceId().equals(deviceId)) {
+            logger.debug("Webhook event {} received for parent device {}", eventType, deviceId);
+            scheduler.execute(this::pollStatus);
+        }
     }
 
     @Override
@@ -471,6 +470,22 @@ public class RachioZoneHandler extends RachioHandler {
         return getThing().getUID().getId();
     }
 
+    @Override
+    public boolean isForDevice(String deviceId) {
+        RachioZoneConfiguration localConfig = config;
+        return localConfig != null && localConfig.getDeviceId() != null && localConfig.getDeviceId().equals(deviceId);
+    }
+    
+    @Override
+    public boolean isActive() {
+        return getThing().getStatus() != ThingStatus.UNINITIALIZED;
+    }
+    
+    @Override
+    public String getListenerDescription() {
+        return "RachioZoneHandler[" + getThing().getUID() + "]";
+    }
+    
     @Override
     public boolean isForZone(String zoneId) {
         RachioZoneConfiguration localConfig = config;
