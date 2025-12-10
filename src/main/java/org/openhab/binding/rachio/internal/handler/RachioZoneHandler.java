@@ -8,7 +8,7 @@ import java.util.Map;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.api.RachioHttp;
+import org.openhab.binding.rachio.internal.api.RachioApiException;
 import org.openhab.binding.rachio.internal.api.dto.CustomCrop;
 import org.openhab.binding.rachio.internal.api.dto.CustomNozzle;
 import org.openhab.binding.rachio.internal.api.dto.CustomSoil;
@@ -18,31 +18,27 @@ import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.QuantityType;
 import org.openhab.core.library.unit.Units;
-import org.openhab.core.thing.Channel;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
 import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
-import org.openhab.core.thing.binding.BaseThingHandler;
 import org.openhab.core.types.Command;
 import org.openhab.core.types.RefreshType;
-import org.openhab.core.types.State;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * The {@link RachioZoneHandler} is responsible for handling commands, which are
- * sent to one of the channels.
+ * The {@link RachioZoneHandler} is responsible for handling commands for zone channels
  *
  * @author Damien Boyett - Initial contribution
  */
 @NonNullByDefault
-public class RachioZoneHandler extends BaseThingHandler implements RachioStatusListener {
+public class RachioZoneHandler extends RachioHandler {
 
     private final Logger logger = LoggerFactory.getLogger(RachioZoneHandler.class);
 
-    private @Nullable RachioBridgeHandler bridgeHandler;
     private @Nullable RachioZone zone;
+    private @Nullable RachioZoneConfiguration config;
 
     public RachioZoneHandler(Thing thing) {
         super(thing);
@@ -50,14 +46,27 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
 
     @Override
     public void initialize() {
-        logger.debug("Initializing Rachio zone handler");
-        updateStatus(ThingStatus.UNKNOWN);
-
-        bridgeHandler = (RachioBridgeHandler) getBridge().getHandler();
+        logger.debug("Initializing Rachio zone handler for {}", getThing().getUID());
+        
+        config = getConfigAs(RachioZoneConfiguration.class);
+        
+        // Get bridge handler to access HTTP client
+        RachioBridgeHandler bridgeHandler = getBridgeHandler();
         if (bridgeHandler != null) {
-            // Status listeners are handled differently in OpenHAB 5.x
-            // The bridge will update us through property changes
-            scheduleZoneUpdate();
+            // Get HTTP client from bridge
+            rachioHttp = bridgeHandler.getRachioHttp();
+            rachioSecurity = bridgeHandler.getRachioSecurity();
+            
+            // Register with bridge for status updates
+            bridgeHandler.registerStatusListener(this);
+            
+            updateStatus(ThingStatus.UNKNOWN);
+            
+            // Start initial poll
+            scheduler.execute(this::pollStatus);
+            
+            // Start regular polling
+            startPolling();
         } else {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "No bridge available");
         }
@@ -65,11 +74,12 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
 
     @Override
     public void dispose() {
-        logger.debug("Disposing Rachio zone handler");
+        logger.debug("Disposing Rachio zone handler for {}", getThing().getUID());
         
-        RachioBridgeHandler handler = bridgeHandler;
-        if (handler != null) {
-            // Status listener cleanup handled by OpenHAB framework
+        // Unregister from bridge
+        RachioBridgeHandler bridgeHandler = getBridgeHandler();
+        if (bridgeHandler != null) {
+            bridgeHandler.unregisterStatusListener(this);
         }
         
         super.dispose();
@@ -80,15 +90,19 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         logger.debug("Handling command {} for channel {}", command, channelUID);
 
         if (command instanceof RefreshType) {
-            refreshZone();
+            scheduler.execute(this::pollStatus);
             return;
         }
 
-        RachioBridgeHandler handler = bridgeHandler;
-        RachioZoneConfiguration cfg = getConfigAs(RachioZoneConfiguration.class);
+        RachioZoneConfiguration localConfig = config;
+        if (localConfig == null || localConfig.getZoneId() == null) {
+            logger.warn("Zone configuration not available");
+            return;
+        }
 
-        if (handler == null) {
-            logger.warn("Bridge handler not available");
+        RachioHttp localHttpClient = rachioHttp;
+        if (localHttpClient == null) {
+            logger.warn("HTTP client not available");
             return;
         }
 
@@ -100,11 +114,11 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                     if (command instanceof OnOffType) {
                         if (command == OnOffType.ON) {
                             // Use configured default duration or fallback
-                            Integer duration = cfg.getDefaultDuration() != null ? 
-                                cfg.getDefaultDuration() : DEFAULT_ZONE_DURATION;
-                            startZone(duration);
+                            Integer duration = localConfig.getDefaultDuration() != null ? 
+                                localConfig.getDefaultDuration() : DEFAULT_ZONE_DURATION;
+                            startZone(localConfig.getZoneId(), duration);
                         } else {
-                            stopZone();
+                            stopZone(localConfig.getZoneId());
                         }
                     } else if (command instanceof QuantityType) {
                         // Handle duration command
@@ -112,28 +126,28 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                         int minutes = quantity.toUnit(Units.MINUTE).intValue();
                         
                         // Use the provided duration or configured default
-                        Integer duration = cfg.getDefaultDuration() != null ? 
-                            cfg.getDefaultDuration() : DEFAULT_ZONE_DURATION;
+                        Integer duration = localConfig.getDefaultDuration() != null ? 
+                            localConfig.getDefaultDuration() : DEFAULT_ZONE_DURATION;
                         
                         if (minutes > 0) {
                             duration = minutes;
                         }
                         
-                        startZone(duration);
+                        startZone(localConfig.getZoneId(), duration);
                     }
                     break;
 
                 case CHANNEL_ZONE_STOP:
                     if (command == OnOffType.ON) {
-                        stopZone();
+                        stopZone(localConfig.getZoneId());
                     }
                     break;
 
                 case CHANNEL_ZONE_ENABLED:
                     if (command instanceof OnOffType) {
                         boolean enabled = command == OnOffType.ON;
-                        handler.getHttpClient().setZoneEnabled(cfg.getZoneId(), enabled);
-                        scheduleZoneUpdate();
+                        localHttpClient.setZoneEnabled(localConfig.getZoneId(), enabled);
+                        scheduler.execute(this::pollStatus);
                     }
                     break;
 
@@ -141,13 +155,13 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                     if (command instanceof DecimalType) {
                         int minutes = ((DecimalType) command).intValue();
                         if (minutes > 0) {
-                            startZone(minutes);
+                            startZone(localConfig.getZoneId(), minutes);
                         }
                     } else if (command instanceof QuantityType) {
                         QuantityType<?> quantity = (QuantityType<?>) command;
                         int minutes = quantity.toUnit(Units.MINUTE).intValue();
                         if (minutes > 0) {
-                            startZone(minutes);
+                            startZone(localConfig.getZoneId(), minutes);
                         }
                     }
                     break;
@@ -156,7 +170,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                     if (command instanceof DecimalType) {
                         int seconds = ((DecimalType) command).intValue();
                         if (seconds > 0) {
-                            startZone(seconds / 60); // Convert seconds to minutes
+                            startZone(localConfig.getZoneId(), seconds / 60); // Convert seconds to minutes
                         }
                     }
                     break;
@@ -170,36 +184,26 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         }
     }
 
+    /**
+     * Implementation of abstract method from RachioHandler
+     */
     @Override
-    public void onStatusChanged(ThingStatus status, ThingStatusDetail detail, @Nullable String message) {
-        updateStatus(status, detail, message);
-        
-        if (status == ThingStatus.ONLINE) {
-            scheduleZoneUpdate();
+    protected void pollStatus() throws RachioApiException {
+        RachioZoneConfiguration localConfig = config;
+        if (localConfig == null || localConfig.getZoneId() == null) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, 
+                    "Zone configuration not available");
+            return;
         }
-    }
 
-    /**
-     * Schedule a zone update
-     */
-    private void scheduleZoneUpdate() {
-        scheduler.execute(this::refreshZone);
-    }
-
-    /**
-     * Refresh zone data from bridge
-     */
-    private void refreshZone() {
-        RachioBridgeHandler handler = bridgeHandler;
-        RachioZoneConfiguration cfg = getConfigAs(RachioZoneConfiguration.class);
-
-        if (handler == null) {
-            logger.debug("Bridge handler not available for refresh");
+        RachioBridgeHandler bridgeHandler = getBridgeHandler();
+        if (bridgeHandler == null) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "No bridge available");
             return;
         }
 
         try {
-            RachioZone zone = handler.getZone(cfg.getZoneId());
+            RachioZone zone = bridgeHandler.getZone(localConfig.getZoneId());
             if (zone != null) {
                 updateZone(zone);
                 updateStatus(ThingStatus.ONLINE);
@@ -207,7 +211,7 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
                 updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Zone not found");
             }
         } catch (Exception e) {
-            logger.error("Error refreshing zone", e);
+            logger.error("Error polling zone status", e);
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
     }
@@ -270,6 +274,9 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
         
         // Zone property channels
         updateZonePropertyChannels(zone);
+        
+        // Update rate limit channels (inherited from RachioHandler)
+        updateRateLimitChannels();
     }
 
     /**
@@ -325,20 +332,21 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
     /**
      * Start zone watering
      *
+     * @param zoneId zone ID
      * @param duration duration in minutes
      */
-    private void startZone(Integer duration) {
-        RachioBridgeHandler handler = bridgeHandler;
-        RachioZoneConfiguration cfg = getConfigAs(RachioZoneConfiguration.class);
+    private void startZone(String zoneId, Integer duration) {
+        RachioHttp localHttpClient = rachioHttp;
+        RachioZoneConfiguration localConfig = config;
         
-        if (handler == null) {
-            logger.warn("Bridge handler not available");
+        if (localHttpClient == null) {
+            logger.warn("HTTP client not available");
             return;
         }
         
         // Use configured default duration if available and positive
-        if (cfg.getDefaultDuration() != null && cfg.getDefaultDuration() > 0) {
-            duration = cfg.getDefaultDuration();
+        if (localConfig != null && localConfig.getDefaultDuration() != null && localConfig.getDefaultDuration() > 0) {
+            duration = localConfig.getDefaultDuration();
         }
         
         // Ensure minimum duration
@@ -346,17 +354,14 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
             duration = DEFAULT_ZONE_DURATION;
         }
         
-        logger.debug("Starting zone {} for {} minutes", cfg.getZoneId(), duration);
+        logger.debug("Starting zone {} for {} minutes", zoneId, duration);
         
         try {
-            handler.getHttpClient().startZone(cfg.getZoneId(), duration);
-            
-            // Update zone status immediately
-            updateState(CHANNEL_ZONE_STATUS, OnOffType.ON);
+            localHttpClient.startZone(zoneId, duration * 60); // Convert minutes to seconds
             
             // Schedule refresh to get updated status
             scheduler.schedule(() -> {
-                refreshZone();
+                scheduler.execute(this::pollStatus);
             }, 5, java.util.concurrent.TimeUnit.SECONDS);
             
         } catch (Exception e) {
@@ -367,27 +372,25 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
 
     /**
      * Stop zone watering
+     *
+     * @param zoneId zone ID
      */
-    private void stopZone() {
-        RachioBridgeHandler handler = bridgeHandler;
-        RachioZoneConfiguration cfg = getConfigAs(RachioZoneConfiguration.class);
+    private void stopZone(String zoneId) {
+        RachioHttp localHttpClient = rachioHttp;
         
-        if (handler == null) {
-            logger.warn("Bridge handler not available");
+        if (localHttpClient == null) {
+            logger.warn("HTTP client not available");
             return;
         }
         
-        logger.debug("Stopping zone {}", cfg.getZoneId());
+        logger.debug("Stopping zone {}", zoneId);
         
         try {
-            handler.getHttpClient().stopZone(cfg.getZoneId());
-            
-            // Update zone status immediately
-            updateState(CHANNEL_ZONE_STATUS, OnOffType.OFF);
+            localHttpClient.stopZone(zoneId);
             
             // Schedule refresh
             scheduler.schedule(() -> {
-                refreshZone();
+                scheduler.execute(this::pollStatus);
             }, 5, java.util.concurrent.TimeUnit.SECONDS);
             
         } catch (Exception e) {
@@ -406,13 +409,71 @@ public class RachioZoneHandler extends BaseThingHandler implements RachioStatusL
     }
 
     /**
-     * Force a poll of devices from bridge
+     * Get the bridge handler
      */
-    protected void pollDevices() {
-        RachioBridgeHandler handler = bridgeHandler;
-        if (handler != null) {
-            // Call package-private method on bridge
-            handler.pollDevices();
+    private @Nullable RachioBridgeHandler getBridgeHandler() {
+        Thing bridge = getBridge();
+        if (bridge != null && bridge.getHandler() instanceof RachioBridgeHandler) {
+            return (RachioBridgeHandler) bridge.getHandler();
         }
+        return null;
+    }
+
+    // ===== RachioStatusListener interface implementations =====
+    
+    @Override
+    public void onDeviceUpdated(String deviceId) {
+        // Zone handler doesn't need to react to device updates directly
+    }
+
+    @Override
+    public void onZoneUpdated(String zoneId) {
+        RachioZoneConfiguration localConfig = config;
+        if (localConfig != null && zoneId.equals(localConfig.getZoneId())) {
+            logger.debug("Zone {} update received via listener", zoneId);
+            scheduler.execute(this::pollStatus);
+        }
+    }
+
+    @Override
+    public void onWebhookEvent(String deviceId, String eventType, 
+                               @Nullable String subType, 
+                               @Nullable Map<String, Object> eventData) {
+        // Zone handler might react to zone-specific webhook events
+        logger.debug("Webhook event {} received for device {}", eventType, deviceId);
+    }
+
+    @Override
+    public void onRateLimitChanged(int remainingRequests, int limit, long resetTime) {
+        // Update rate limit channels via parent class
+        scheduler.execute(this::updateRateLimitChannels);
+    }
+
+    @Override
+    public void onConnectionChanged(boolean connected, @Nullable String message) {
+        if (!connected) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, 
+                    message != null ? message : "Lost connection to Rachio API");
+        } else {
+            updateStatus(ThingStatus.ONLINE);
+            scheduler.execute(this::pollStatus);
+        }
+    }
+
+    @Override
+    public void onError(String errorMessage, @Nullable Throwable exception) {
+        logger.error("Error received: {}", errorMessage, exception);
+        updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, errorMessage);
+    }
+
+    @Override
+    public @Nullable String getThingId() {
+        return getThing().getUID().getId();
+    }
+
+    @Override
+    public boolean isForZone(String zoneId) {
+        RachioZoneConfiguration localConfig = config;
+        return localConfig != null && zoneId.equals(localConfig.getZoneId());
     }
 }
