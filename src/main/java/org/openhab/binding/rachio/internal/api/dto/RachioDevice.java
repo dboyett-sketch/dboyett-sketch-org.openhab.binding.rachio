@@ -9,377 +9,124 @@ import org.eclipse.jdt.annotation.Nullable;
 import com.google.gson.annotations.SerializedName;
 
 /**
- * Represents a Rachio device (controller)
+ * DTO for Rachio device
  *
- * @author Brian Gleeson - Initial contribution
- * @author Michael F. - Adaptations for OH3/OH4
- * @author Damion B. - Professional features for OH5
+ * @author Damion Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioDevice {
-    @SerializedName("id")
-    public String id = "";
-
-    @SerializedName("name")
-    public String name = "";
-
-    @SerializedName("createdDate")
-    public Instant createdDate = Instant.now();
-
-    @SerializedName("latitude")
-    public double latitude = 0.0;
-
-    @SerializedName("longitude")
-    public double longitude = 0.0;
-
-    @SerializedName("timeZone")
-    public String timeZone = "";
-
+    public @Nullable String id;
+    public @Nullable String name;
+    public @Nullable String model;
+    
     @SerializedName("serialNumber")
-    public String serialNumber = "";
-
+    public @Nullable String serialNumber;
+    
     @SerializedName("macAddress")
-    public String macAddress = "";
-
-    @SerializedName("model")
-    public String model = "";
-
-    @SerializedName("on")
-    public boolean on = true;
-
-    @SerializedName("status")
-    @Nullable
-    public String status;
-
-    @SerializedName("scheduleModeType")
-    @Nullable
-    public String scheduleModeType;
-
-    @SerializedName("paused")
-    public boolean paused = false;
-
-    @SerializedName("scheduleModeModifiedDate")
-    @Nullable
-    public Instant scheduleModeModifiedDate;
-
-    @SerializedName("scheduleModeModifiedBy")
-    @Nullable
-    public String scheduleModeModifiedBy;
-
-    @SerializedName("zones")
-    @Nullable
-    public List<RachioZone> zones;
-
-    @SerializedName("flexScheduleRules")
-    @Nullable
-    public Object flexScheduleRules;
-
-    @SerializedName("deleted")
-    public boolean deleted = false;
-
-    @SerializedName("homeKitCompatible")
-    public boolean homeKitCompatible = false;
-
-    @SerializedName("frostProtectTemp")
-    public int frostProtectTemp = 2;
-
-    @SerializedName("frostProtectEnabled")
-    public boolean frostProtectEnabled = false;
-
-    @SerializedName("modelVersion")
-    @Nullable
-    public String modelVersion;
-
-    @SerializedName("firmwareVersion")
-    @Nullable
-    public String firmwareVersion;
-
+    public @Nullable String macAddress;
+    
+    public @Nullable String status;
+    
+    @SerializedName("rainDelay")
+    public @Nullable Integer rainDelay;
+    
     @SerializedName("rainDelayExpirationDate")
-    @Nullable
-    public Instant rainDelayExpirationDate;
-
-    @SerializedName("rainDelayStartDate")
-    @Nullable
-    public Instant rainDelayStartDate;
-
-    @SerializedName("rainDelayDuration")
-    public int rainDelayDuration = 0;
-
-    @SerializedName("generation")
-    public int generation = 0;
-
-    @SerializedName("scheduleTypes")
-    @Nullable
-    public List<String> scheduleTypes;
-
-    @SerializedName("serialDataAvailable")
-    public boolean serialDataAvailable = false;
-
-    @SerializedName("softwareVersion")
-    @Nullable
-    public String softwareVersion;
-
-    @SerializedName("hardwareVersion")
-    @Nullable
-    public String hardwareVersion;
-
-    @SerializedName("sku")
-    @Nullable
-    public String sku;
-
-    @SerializedName("batteryPowered")
-    public boolean batteryPowered = false;
-
-    @SerializedName("batteryVoltage")
-    public double batteryVoltage = 0.0;
-
-    @SerializedName("batteryPoweredRadioVersion")
-    @Nullable
-    public String batteryPoweredRadioVersion;
-
-    @SerializedName("batteryPoweredModel")
-    @Nullable
-    public String batteryPoweredModel;
-
-    // New fields for professional features
-    @SerializedName("wateringStatus")
-    @Nullable
-    public String wateringStatus;
-
-    @SerializedName("zonesEnabled")
-    public int zonesEnabled = 0;
-
-    @SerializedName("totalZones")
-    public int totalZones = 0;
-
-    @SerializedName("lastHeardFrom")
-    @Nullable
-    public Instant lastHeardFrom;
-
-    @SerializedName("online")
-    public boolean online = true;
-
-    @SerializedName("sleepMode")
-    public boolean sleepMode = false;
-
-    @SerializedName("currentSchedule")
-    @Nullable
-    public String currentSchedule;
-
-    // Getters
-    public String getId() {
+    public @Nullable Instant rainDelayExpirationDate;
+    
+    @SerializedName("zones")
+    public @Nullable List<RachioZone> zones;
+    
+    @SerializedName("createdDate")
+    public @Nullable Instant createdDate;
+    
+    @SerializedName("updatedDate")
+    public @Nullable Instant updatedDate;
+    
+    // Professional irrigation data
+    @SerializedName("elevation")
+    public @Nullable Double elevation;
+    
+    @SerializedName("flexScheduleRules")
+    public @Nullable Boolean flexScheduleRules;
+    
+    @SerializedName("latitude")
+    public @Nullable Double latitude;
+    
+    @SerializedName("longitude")
+    public @Nullable Double longitude;
+    
+    @SerializedName("timeZone")
+    public @Nullable String timeZone;
+    
+    @SerializedName("scheduleModeType")
+    public @Nullable String scheduleModeType;
+    
+    // Getters for compatibility with existing code
+    public @Nullable String getId() {
         return id;
     }
-
-    public String getName() {
+    
+    public @Nullable String getName() {
         return name;
     }
-
-    public Instant getCreatedDate() {
-        return createdDate;
-    }
-
-    public double getLatitude() {
-        return latitude;
-    }
-
-    public double getLongitude() {
-        return longitude;
-    }
-
-    public String getTimeZone() {
-        return timeZone;
-    }
-
-    public String getSerialNumber() {
-        return serialNumber;
-    }
-
-    public String getMacAddress() {
-        return macAddress;
-    }
-
-    public String getModel() {
+    
+    public @Nullable String getModel() {
         return model;
     }
-
-    public boolean isOn() {
-        return on;
+    
+    public @Nullable String getSerialNumber() {
+        return serialNumber;
     }
-
-    @Nullable
-    public String getStatus() {
+    
+    public @Nullable String getMacAddress() {
+        return macAddress;
+    }
+    
+    public @Nullable String getStatus() {
         return status;
     }
-
-    @Nullable
-    public String getScheduleModeType() {
-        return scheduleModeType;
+    
+    public @Nullable Integer getRainDelay() {
+        return rainDelay;
     }
-
-    public boolean isPaused() {
-        return paused;
-    }
-
-    @Nullable
-    public Instant getScheduleModeModifiedDate() {
-        return scheduleModeModifiedDate;
-    }
-
-    @Nullable
-    public String getScheduleModeModifiedBy() {
-        return scheduleModeModifiedBy;
-    }
-
-    @Nullable
-    public List<RachioZone> getZones() {
-        return zones;
-    }
-
-    @Nullable
-    public Object getFlexScheduleRules() {
-        return flexScheduleRules;
-    }
-
-    public boolean isDeleted() {
-        return deleted;
-    }
-
-    public boolean isHomeKitCompatible() {
-        return homeKitCompatible;
-    }
-
-    public int getFrostProtectTemp() {
-        return frostProtectTemp;
-    }
-
-    public boolean isFrostProtectEnabled() {
-        return frostProtectEnabled;
-    }
-
-    @Nullable
-    public String getModelVersion() {
-        return modelVersion;
-    }
-
-    @Nullable
-    public String getFirmwareVersion() {
-        return firmwareVersion;
-    }
-
-    @Nullable
-    public Instant getRainDelayExpirationDate() {
+    
+    public @Nullable Instant getRainDelayExpirationDate() {
         return rainDelayExpirationDate;
     }
-
-    @Nullable
-    public Instant getRainDelayStartDate() {
-        return rainDelayStartDate;
+    
+    public @Nullable List<RachioZone> getZones() {
+        return zones;
     }
-
-    public int getRainDelayDuration() {
-        return rainDelayDuration;
+    
+    public @Nullable Instant getCreatedDate() {
+        return createdDate;
     }
-
-    public int getGeneration() {
-        return generation;
+    
+    public @Nullable Instant getUpdatedDate() {
+        return updatedDate;
     }
-
-    @Nullable
-    public List<String> getScheduleTypes() {
-        return scheduleTypes;
+    
+    public @Nullable Double getElevation() {
+        return elevation;
     }
-
-    public boolean isSerialDataAvailable() {
-        return serialDataAvailable;
+    
+    public @Nullable Boolean isFlexScheduleRules() {
+        return flexScheduleRules;
     }
-
-    @Nullable
-    public String getSoftwareVersion() {
-        return softwareVersion;
+    
+    public @Nullable Double getLatitude() {
+        return latitude;
     }
-
-    @Nullable
-    public String getHardwareVersion() {
-        return hardwareVersion;
+    
+    public @Nullable Double getLongitude() {
+        return longitude;
     }
-
-    @Nullable
-    public String getSku() {
-        return sku;
+    
+    public @Nullable String getTimeZone() {
+        return timeZone;
     }
-
-    public boolean isBatteryPowered() {
-        return batteryPowered;
-    }
-
-    public double getBatteryVoltage() {
-        return batteryVoltage;
-    }
-
-    @Nullable
-    public String getBatteryPoweredRadioVersion() {
-        return batteryPoweredRadioVersion;
-    }
-
-    @Nullable
-    public String getBatteryPoweredModel() {
-        return batteryPoweredModel;
-    }
-
-    // Getters for new professional fields
-    @Nullable
-    public String getWateringStatus() {
-        return wateringStatus;
-    }
-
-    public int getZonesEnabled() {
-        return zonesEnabled;
-    }
-
-    public int getTotalZones() {
-        return totalZones;
-    }
-
-    @Nullable
-    public Instant getLastHeardFrom() {
-        return lastHeardFrom;
-    }
-
-    public boolean isOnline() {
-        return online;
-    }
-
-    public boolean isSleepMode() {
-        return sleepMode;
-    }
-
-    @Nullable
-    public String getCurrentSchedule() {
-        return currentSchedule;
-    }
-
-    // Convenience methods
-    public boolean hasZones() {
-        return zones != null && !zones.isEmpty();
-    }
-
-    public int getZoneCount() {
-        return zones != null ? zones.size() : 0;
-    }
-
-    public boolean isActive() {
-        return on && !deleted && !paused;
-    }
-
-    public boolean hasRainDelay() {
-        return rainDelayDuration > 0 && rainDelayExpirationDate != null 
-            && rainDelayExpirationDate.isAfter(Instant.now());
-    }
-
-    @Override
-    public String toString() {
-        return "RachioDevice [id=" + id + ", name=" + name + ", model=" + model + ", on=" + on + ", paused=" + paused
-                + ", firmwareVersion=" + firmwareVersion + ", zones=" + (zones != null ? zones.size() : 0) + "]";
+    
+    public @Nullable String getScheduleModeType() {
+        return scheduleModeType;
     }
 }
