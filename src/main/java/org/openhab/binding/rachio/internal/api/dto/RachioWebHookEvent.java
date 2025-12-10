@@ -1,39 +1,55 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
+import java.util.Map;
+
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
-import java.time.Instant;
-import java.util.Map;
-
 /**
- * DTO for Rachio Webhook Event
- *
- * @author David Boyett - Initial contribution
+ * Data transfer object for Rachio webhook events.
  */
 @NonNullByDefault
 public class RachioWebHookEvent {
-    @Nullable
-    public String eventType; // ZONE_STATUS, DEVICE_STATUS, etc.
+    private String id = "";
+    private String type = "";
+    private @Nullable String subType;
+    private @Nullable Map<String, Object> data;
     
-    @Nullable
-    public String deviceId;
+    // Getters and setters
+    public String getId() {
+        return id;
+    }
     
-    @Nullable
-    public String zoneId;
+    public void setId(String id) {
+        this.id = id;
+    }
     
-    @Nullable
-    public Instant timestamp;
+    public String getType() {
+        return type;
+    }
     
-    @Nullable
-    public String summary;
+    public void setType(String type) {
+        this.type = type;
+    }
     
-    @Nullable
-    public Map<String, Object> data; // Event-specific data
+    public @Nullable String getSubType() {
+        return subType;
+    }
+    
+    public void setSubType(@Nullable String subType) {
+        this.subType = subType;
+    }
+    
+    public @Nullable Map<String, Object> getData() {
+        return data;
+    }
+    
+    public void setData(@Nullable Map<String, Object> data) {
+        this.data = data;
+    }
     
     @Override
     public String toString() {
-        return "RachioWebHookEvent [eventType=" + eventType + ", deviceId=" + deviceId + 
-               ", zoneId=" + zoneId + ", timestamp=" + timestamp + "]";
+        return "RachioWebHookEvent [id=" + id + ", type=" + type + ", subType=" + subType + ", data=" + data + "]";
     }
 }
