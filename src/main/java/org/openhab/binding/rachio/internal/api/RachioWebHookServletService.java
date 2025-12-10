@@ -1,6 +1,8 @@
 package org.openhab.binding.rachio.internal.api;
 
 import java.util.Map;
+import java.util.Timer;
+import java.util.TimerTask;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -29,7 +31,7 @@ public class RachioWebHookServletService {
     private @Nullable RachioBridgeHandler bridgeHandler;
     private @Nullable RachioHttp rachioHttp;
     private @Nullable RachioWebHookServlet servlet;
-    private @Nullable ScheduledFuture<?> webhookHealthJob;
+    private @Nullable Timer healthCheckTimer;
 
     private @Nullable HttpClientFactory httpClientFactory;
 
@@ -43,7 +45,6 @@ public class RachioWebHookServletService {
     }
 
     @Activate
-    // FIXED: Added @Nullable to Map value type
     public void activate(@Nullable ComponentContext componentContext, @Nullable Map<String, @Nullable Object> properties) {
         logger.debug("Activating RachioWebHookServletService");
         startWebhookHealthCheck();
@@ -102,7 +103,6 @@ public class RachioWebHookServletService {
                 String webhookUrl = buildWebhookUrl(handler);
                 String externalId = "openhab-" + handler.getThing().getUID().getId();
                 
-                // FIXED: registerWebhook returns void, not boolean
                 http.registerWebhook(webhookUrl, externalId);
                 logger.info("Registered webhook with Rachio: {}", webhookUrl);
                 
@@ -134,16 +134,20 @@ public class RachioWebHookServletService {
     private void startWebhookHealthCheck() {
         stopWebhookHealthCheck(); // Stop existing if any
         
-        webhookHealthJob = scheduler.scheduleWithFixedDelay(() -> {
-            checkWebhookHealth();
-        }, 0, 5, TimeUnit.MINUTES); // Check every 5 minutes
+        healthCheckTimer = new Timer("RachioWebhookHealthCheck", true);
+        healthCheckTimer.schedule(new TimerTask() {
+            @Override
+            public void run() {
+                checkWebhookHealth();
+            }
+        }, 0, 5 * 60 * 1000); // Check every 5 minutes
     }
 
     private void stopWebhookHealthCheck() {
-        ScheduledFuture<?> job = webhookHealthJob;
-        if (job != null) {
-            job.cancel(true);
-            webhookHealthJob = null;
+        Timer timer = healthCheckTimer;
+        if (timer != null) {
+            timer.cancel();
+            healthCheckTimer = null;
         }
     }
 
@@ -163,17 +167,5 @@ public class RachioWebHookServletService {
                 logger.debug("Webhook health check failed: {}", e.getMessage());
             }
         }
-    }
-
-    // Scheduler reference - this should be injected by OSGi
-    private @Nullable org.openhab.core.common.DisposableScheduler scheduler;
-    
-    @Reference
-    public void setScheduler(org.openhab.core.common.DisposableScheduler scheduler) {
-        this.scheduler = scheduler;
-    }
-    
-    public void unsetScheduler(org.openhab.core.common.DisposableScheduler scheduler) {
-        this.scheduler = null;
     }
 }
