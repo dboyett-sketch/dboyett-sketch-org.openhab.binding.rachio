@@ -1,13 +1,13 @@
 package org.openhab.binding.rachio.internal.handler;
 
-import java.util.Map;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.TimeUnit;
-
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.rachio.internal.RachioBindingConstants;
 import org.openhab.binding.rachio.internal.api.RachioHttp;
 import org.openhab.binding.rachio.internal.api.RachioSecurity;
+import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
+import org.openhab.binding.rachio.internal.api.dto.RachioPerson;
+import org.openhab.binding.rachio.internal.api.dto.RachioZone;
 import org.openhab.binding.rachio.internal.config.RachioBridgeConfiguration;
 import org.openhab.binding.rachio.internal.discovery.RachioDiscoveryService;
 import org.openhab.core.thing.Bridge;
@@ -16,27 +16,35 @@ import org.openhab.core.thing.ThingStatus;
 import org.openhab.core.thing.ThingStatusDetail;
 import org.openhab.core.thing.binding.BaseBridgeHandler;
 import org.openhab.core.types.Command;
+import org.openhab.core.types.RefreshType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import com.google.gson.Gson;
+import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+
+import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
 
 /**
- * The {@link RachioBridgeHandler} is responsible for handling commands, which are
- * sent to one of the channels.
+ * The {@link RachioBridgeHandler} is responsible for handling commands for the bridge
  *
- * @author Damion Boyett - Initial contribution
+ * @author Damien Boyett - Initial contribution
  */
 @NonNullByDefault
 public class RachioBridgeHandler extends BaseBridgeHandler {
-    private final Logger logger = LoggerFactory.getLogger(RachioBridgeHandler.class);
 
+    private final Logger logger = LoggerFactory.getLogger(RachioBridgeHandler.class);
+    private final Map<String, RachioDevice> deviceCache = new ConcurrentHashMap<>();
+    private final Set<RachioStatusListener> statusListeners = ConcurrentHashMap.newKeySet();
+
+    private @Nullable RachioHttp httpClient;
+    private @Nullable RachioSecurity security;
+    private @Nullable RachioDiscoveryService discoveryService;
+    private @Nullable ScheduledFuture<?> pollingHandler;
     private @Nullable RachioBridgeConfiguration config;
-    private @Nullable RachioHttp rachioHttp;
-    private @Nullable RachioSecurity rachioSecurity;
-    private @Nullable ScheduledFuture<?> pollingJob;
-    private @Nullable ScheduledFuture<?> webhookHealthJob;
-    private @Nullable RachioDiscoveryService discoveryService; // Added missing field
+    private @Nullable String personId;
 
     public RachioBridgeHandler(Bridge bridge) {
         super(bridge);
@@ -45,189 +53,261 @@ public class RachioBridgeHandler extends BaseBridgeHandler {
     @Override
     public void initialize() {
         logger.debug("Initializing Rachio bridge handler");
-        
-        // Get configuration
-        this.config = getConfigAs(RachioBridgeConfiguration.class);
-        
-        if (this.config == null || this.config.apiKey == null || this.config.apiKey.isEmpty()) {
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "API key not configured");
+
+        config = getConfigAs(RachioBridgeConfiguration.class);
+        if (config.apiKey == null || config.apiKey.isEmpty()) {
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "API key is not configured");
             return;
         }
-        
-        // FIXED: Create RachioHttp with config only (no HttpClientFactory needed)
-        this.rachioHttp = new RachioHttp(this.config);
-        this.rachioSecurity = new RachioSecurity(); // FIXED: Removed config parameter
-        
-        // Start polling
-        startPolling();
-        
-        updateStatus(ThingStatus.ONLINE);
+
+        // Initialize HTTP client and security
+        httpClient = new RachioHttp(config.apiKey);
+        security = new RachioSecurity();
+
+        updateStatus(ThingStatus.UNKNOWN);
+
+        // Start initial poll
+        scheduler.execute(() -> {
+            try {
+                // Get person info to retrieve devices
+                RachioPerson person = httpClient.getPersonInfo();
+                if (person != null && person.getId() != null) {
+                    personId = person.getId();
+                    logger.debug("Retrieved person ID: {}", personId);
+                    
+                    // CORRECTION APPLIED HERE (Line 95 area):
+                    // Initialize polling handler correctly - store the ScheduledFuture, not cast it
+                    pollingHandler = scheduler.scheduleWithFixedDelay(this::pollDevices, 
+                            0, config.refresh, TimeUnit.SECONDS);
+                    
+                    updateStatus(ThingStatus.ONLINE);
+                    startDiscovery();
+                } else {
+                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, 
+                            "Failed to retrieve person information");
+                }
+            } catch (Exception e) {
+                logger.error("Error during bridge initialization", e);
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
+            }
+        });
     }
 
     @Override
     public void dispose() {
-        stopPolling();
-        stopWebhookHealthCheck();
+        logger.debug("Disposing Rachio bridge handler");
         
-        RachioHttp http = rachioHttp;
-        if (http != null) {
-            http.close();
+        // Cancel polling job
+        ScheduledFuture<?> localPollingHandler = pollingHandler;
+        if (localPollingHandler != null && !localPollingHandler.isCancelled()) {
+            localPollingHandler.cancel(true);
+            pollingHandler = null;
         }
+        
+        // Clear caches
+        deviceCache.clear();
+        statusListeners.clear();
         
         super.dispose();
     }
 
     @Override
     public void handleCommand(ChannelUID channelUID, Command command) {
-        // Handle bridge commands if needed
-        logger.debug("Bridge command received for channel {}: {}", channelUID.getId(), command);
+        logger.debug("Handling command {} for channel {}", command, channelUID);
+
+        if (command instanceof RefreshType) {
+            // Refresh bridge status
+            scheduler.execute(this::pollDevices);
+        }
+        // Bridge doesn't have many commands - most are handled by device/zone handlers
     }
 
-    // FIXED: Added missing method for webhook servlet
-    public @Nullable Gson getGson() {
-        RachioHttp http = rachioHttp;
-        return http != null ? http.getGson() : null;
-    }
+    /**
+     * Poll devices from Rachio API
+     * CORRECTION: Changed from private to package-private to allow access from device/zone handlers
+     */
+    void pollDevices() {
+        RachioHttp localHttpClient = httpClient;
+        if (localHttpClient == null || getThing().getStatus() != ThingStatus.ONLINE) {
+            return;
+        }
 
-    // FIXED: Added missing method for webhook servlet
-    public boolean isIpAllowed(String ipAddress, String requestPath) {
-        RachioSecurity security = rachioSecurity;
-        return security != null && security.isIpAllowed(ipAddress, requestPath);
-    }
-
-    // FIXED: Added method for webhook events - matches the signature from compilation errors
-    public void handleWebhookEvent(String deviceId, String eventType, @Nullable String subType, 
-                                   @Nullable Map<String, Object> eventData) {
-        logger.debug("Received webhook event: {} for device {}", eventType, deviceId);
-        
-        // Notify all child things about the webhook event
-        getThing().getThings().forEach(thing -> {
-            if (thing.getHandler() instanceof RachioStatusListener) {
-                RachioStatusListener listener = (RachioStatusListener) thing.getHandler();
-                listener.onWebhookEvent(deviceId, eventType, subType, eventData);
+        try {
+            logger.debug("Polling Rachio devices");
+            
+            // Get person info to retrieve devices
+            RachioPerson person = localHttpClient.getPersonInfo();
+            if (person != null && person.getDevices() != null) {
+                // Update device cache
+                for (RachioDevice device : person.getDevices()) {
+                    deviceCache.put(device.getId(), device);
+                }
+                
+                // Notify status listeners of updates
+                notifyDeviceUpdates(person.getDevices());
+                
+                logger.debug("Successfully polled {} devices", person.getDevices().size());
             }
-        });
-        
-        // Also trigger polling to update state
-        scheduler.submit(() -> {
-            try {
-                // Quick refresh after webhook
-                pollDevices();
-            } catch (Exception e) {
-                logger.debug("Failed to poll after webhook", e);
-            }
-        });
+        } catch (Exception e) {
+            logger.error("Error polling devices", e);
+            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, 
+                    "Polling error: " + e.getMessage());
+        }
     }
 
-    // FIXED: Added getter methods for child handlers
-    public @Nullable RachioHttp getRachioHttp() {
-        return rachioHttp;
+    /**
+     * Start device discovery
+     */
+    private void startDiscovery() {
+        // CORRECTION APPLIED HERE (Line 188 area):
+        // Use startBackgroundDiscovery() instead of protected startScan()
+        RachioDiscoveryService localDiscoveryService = discoveryService;
+        if (localDiscoveryService != null) {
+            localDiscoveryService.startBackgroundDiscovery();
+        } else {
+            logger.debug("Discovery service not available");
+        }
     }
 
-    public @Nullable RachioSecurity getRachioSecurity() {
-        return rachioSecurity;
-    }
-
-    // FIXED: Added missing method for discovery service
+    /**
+     * Set discovery service
+     */
     public void setDiscoveryService(RachioDiscoveryService discoveryService) {
         this.discoveryService = discoveryService;
+        discoveryService.setBridgeHandler(this);
     }
 
-    // FIXED: Added missing method for webhook servlet
-    public @Nullable RachioBridgeConfiguration getBridgeConfiguration() {
-        return config;
+    /**
+     * Get device by ID
+     */
+    public @Nullable RachioDevice getDevice(String deviceId) {
+        return deviceCache.get(deviceId);
     }
 
-    // FIXED: Added missing static method - this needs proper implementation
-    @Nullable
-    public static RachioBridgeHandler getBridgeHandler(@Nullable String bridgeUID) {
-        // TODO: Implement proper bridge lookup
-        // This would typically get the bridge handler from the bridge registry
-        // For compilation purposes, returning null
+    /**
+     * Get zone by ID (searches through all devices)
+     */
+    public @Nullable RachioZone getZone(String zoneId) {
+        for (RachioDevice device : deviceCache.values()) {
+            if (device.getZones() != null) {
+                for (RachioZone zone : device.getZones()) {
+                    if (zoneId.equals(zone.getId())) {
+                        return zone;
+                    }
+                }
+            }
+        }
         return null;
     }
 
-    private void startPolling() {
-        stopPolling(); // Stop existing polling if any
-        
-        pollingJob = scheduler.scheduleWithFixedDelay(() -> {
-            try {
-                pollDevices();
-            } catch (Exception e) {
-                logger.warn("Polling failed", e);
-            }
-        }, 0, 60, TimeUnit.SECONDS); // Poll every 60 seconds
-        
-        // Start webhook health check if enabled
-        startWebhookHealthCheck();
+    /**
+     * Get all devices for discovery
+     */
+    public List<RachioDevice> discoverDevices() {
+        return new ArrayList<>(deviceCache.values());
     }
 
-    private void stopPolling() {
-        ScheduledFuture<?> job = pollingJob;
-        if (job != null) {
-            job.cancel(true);
-            pollingJob = null;
+    /**
+     * Get HTTP client
+     */
+    public @Nullable RachioHttp getHttpClient() {
+        return httpClient;
+    }
+
+    /**
+     * Get security utility
+     */
+    public @Nullable RachioSecurity getSecurity() {
+        return security;
+    }
+
+    /**
+     * Get person ID
+     */
+    public @Nullable String getPersonId() {
+        return personId;
+    }
+
+    /**
+     * Get bridge configuration
+     */
+    public @Nullable RachioBridgeConfiguration getBridgeConfig() {
+        return config;
+    }
+
+    /**
+     * Status listener management
+     */
+    public void registerStatusListener(RachioStatusListener listener) {
+        if (listener != null) {
+            statusListeners.add(listener);
+            logger.debug("Registered status listener: {}", listener.getClass().getSimpleName());
         }
     }
 
-    private void pollDevices() {
-        RachioHttp http = rachioHttp;
-        if (http != null) {
+    public void unregisterStatusListener(RachioStatusListener listener) {
+        if (listener != null) {
+            statusListeners.remove(listener);
+            logger.debug("Unregistered status listener: {}", listener.getClass().getSimpleName());
+        }
+    }
+
+    /**
+     * Notify all status listeners of device updates
+     */
+    private void notifyDeviceUpdates(List<RachioDevice> devices) {
+        for (RachioStatusListener listener : statusListeners) {
             try {
-                // Test connection first
-                if (http.testConnection()) {
-                    updateStatus(ThingStatus.ONLINE);
-                    
-                    // Here you would poll devices and update child things
-                    // This is where you'd call http.getDevices() and update device/zone status
-                    logger.debug("Bridge polling successful");
-                    
-                    // Notify discovery service if it exists
-                    RachioDiscoveryService ds = discoveryService;
-                    if (ds != null) {
-                        ds.startScan(); // Trigger device discovery
-                    }
-                } else {
-                    updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, "API connection failed");
+                for (RachioDevice device : devices) {
+                    listener.onDeviceUpdated(device.getId());
                 }
             } catch (Exception e) {
-                logger.debug("Failed to poll devices", e);
-                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
+                logger.warn("Error notifying status listener {}", listener.getClass().getSimpleName(), e);
             }
         }
     }
 
-    private void startWebhookHealthCheck() {
-        stopWebhookHealthCheck();
-        
-        webhookHealthJob = scheduler.scheduleWithFixedDelay(() -> {
-            checkWebhookHealth();
-        }, 0, 5, TimeUnit.MINUTES); // Check every 5 minutes
-    }
-
-    private void stopWebhookHealthCheck() {
-        ScheduledFuture<?> job = webhookHealthJob;
-        if (job != null) {
-            job.cancel(true);
-            webhookHealthJob = null;
-        }
-    }
-
-    private void checkWebhookHealth() {
-        RachioHttp http = rachioHttp;
-        if (http != null) {
+    /**
+     * Notify all status listeners of a status change
+     */
+    protected void notifyStatusListeners(ThingStatus status, ThingStatusDetail detail, @Nullable String message) {
+        for (RachioStatusListener listener : statusListeners) {
             try {
-                // Check webhook registration status
-                // This would verify webhooks are registered with Rachio
-                logger.debug("Webhook health check performed");
-                
-                // You could implement actual webhook health checking here:
-                // 1. Check if webhooks are registered
-                // 2. Re-register if needed
-                // 3. Verify webhook URLs are accessible
+                listener.onStatusChanged(status, detail, message);
             } catch (Exception e) {
-                logger.debug("Webhook health check failed", e);
+                logger.warn("Error notifying status listener {}", listener.getClass().getSimpleName(), e);
             }
         }
+    }
+
+    /**
+     * Get all status listeners (for testing/debugging)
+     */
+    protected Set<RachioStatusListener> getStatusListeners() {
+        return new HashSet<>(statusListeners);
+    }
+
+    /**
+     * Clear device cache (force refresh on next poll)
+     */
+    public void clearDeviceCache() {
+        deviceCache.clear();
+    }
+
+    /**
+     * Check if webhook is configured
+     */
+    public boolean isWebhookConfigured() {
+        RachioBridgeConfiguration localConfig = config;
+        return localConfig != null && localConfig.webhookUrl != null && !localConfig.webhookUrl.isEmpty();
+    }
+
+    /**
+     * Update bridge status and notify listeners
+     */
+    @Override
+    protected void updateStatus(ThingStatus status, ThingStatusDetail statusDetail, @Nullable String description) {
+        super.updateStatus(status, statusDetail, description);
+        notifyStatusListeners(status, statusDetail, description);
     }
 }
