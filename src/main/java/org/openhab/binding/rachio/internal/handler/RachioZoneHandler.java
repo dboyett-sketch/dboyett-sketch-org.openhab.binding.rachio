@@ -178,14 +178,14 @@ public class RachioZoneHandler extends RachioHandler {
 
     private void updateZoneChannels(RachioZone zone) {
         // Update zone name
-        if (zone.name != null) {
-            updateState(CHANNEL_ZONE_NAME, new StringType(zone.name));
-            updatePropertyIfChanged(Thing.PROPERTY_NAME, zone.name);
+        if (zone.getName != null) {
+            updateState(CHANNEL_ZONE_NAME, new StringType(zone.getName));
+            updatePropertyIfChanged(Thing.PROPERTY_NAME, zone.getName);
         }
         
         // Update enabled state
-        if (zone.enabled != null) {
-            updateState(CHANNEL_ZONE_ENABLED, zone.enabled ? OnOffType.ON : OnOffType.OFF);
+        }
+        updateState(CHANNEL_ZONE_ENABLED, zone.isEnabled() ? OnOffType.ON : OnOffType.OFF);
         }
         
         // Update runtime
