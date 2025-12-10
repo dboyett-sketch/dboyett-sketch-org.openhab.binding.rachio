@@ -1,132 +1,70 @@
 package org.openhab.binding.rachio.internal.api.dto;
 
-import java.time.Instant;
 import java.util.List;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
 
-import com.google.gson.annotations.SerializedName;
-
 /**
- * DTO for Rachio device
- *
- * @author Damion Boyett - Initial contribution
+ * Data transfer object for Rachio devices.
  */
 @NonNullByDefault
 public class RachioDevice {
-    public @Nullable String id;
-    public @Nullable String name;
-    public @Nullable String model;
+    private String id = "";
+    private String name = "";
+    private String model = "";
+    private String serialNumber = "";
+    private String macAddress = "";
+    private String status = "";
+    private List<RachioZone> zones;
     
-    @SerializedName("serialNumber")
-    public @Nullable String serialNumber;
+    // Missing fields from compilation errors
+    private @Nullable Boolean online;
+    private @Nullable Long rainDelayExpiration;
+    private @Nullable Boolean paused;
+    private @Nullable String firmwareVersion;
     
-    @SerializedName("macAddress")
-    public @Nullable String macAddress;
+    // Getters and setters
+    public String getId() { return id; }
+    public void setId(String id) { this.id = id; }
     
-    public @Nullable String status;
+    public String getName() { return name; }
+    public void setName(String name) { this.name = name; }
     
-    @SerializedName("rainDelay")
-    public @Nullable Integer rainDelay;
+    public String getModel() { return model; }
+    public void setModel(String model) { this.model = model; }
     
-    @SerializedName("rainDelayExpirationDate")
-    public @Nullable Instant rainDelayExpirationDate;
+    public String getSerialNumber() { return serialNumber; }
+    public void setSerialNumber(String serialNumber) { this.serialNumber = serialNumber; }
     
-    @SerializedName("zones")
-    public @Nullable List<RachioZone> zones;
+    public String getMacAddress() { return macAddress; }
+    public void setMacAddress(String macAddress) { this.macAddress = macAddress; }
     
-    @SerializedName("createdDate")
-    public @Nullable Instant createdDate;
+    public String getStatus() { return status; }
+    public void setStatus(String status) { this.status = status; }
     
-    @SerializedName("updatedDate")
-    public @Nullable Instant updatedDate;
+    public List<RachioZone> getZones() { return zones; }
+    public void setZones(List<RachioZone> zones) { this.zones = zones; }
     
-    // Professional irrigation data
-    @SerializedName("elevation")
-    public @Nullable Double elevation;
+    // Missing getters and setters from compilation errors
+    public @Nullable Boolean getOnline() { return online; }
+    public void setOnline(@Nullable Boolean online) { this.online = online; }
     
-    @SerializedName("flexScheduleRules")
-    public @Nullable Boolean flexScheduleRules;
+    public @Nullable Long getRainDelayExpiration() { return rainDelayExpiration; }
+    public void setRainDelayExpiration(@Nullable Long rainDelayExpiration) { this.rainDelayExpiration = rainDelayExpiration; }
     
-    @SerializedName("latitude")
-    public @Nullable Double latitude;
+    public @Nullable Boolean getPaused() { return paused; }
+    public void setPaused(@Nullable Boolean paused) { this.paused = paused; }
     
-    @SerializedName("longitude")
-    public @Nullable Double longitude;
+    public @Nullable String getFirmwareVersion() { return firmwareVersion; }
+    public void setFirmwareVersion(@Nullable String firmwareVersion) { this.firmwareVersion = firmwareVersion; }
     
-    @SerializedName("timeZone")
-    public @Nullable String timeZone;
-    
-    @SerializedName("scheduleModeType")
-    public @Nullable String scheduleModeType;
-    
-    // Getters for compatibility with existing code
-    public @Nullable String getId() {
-        return id;
-    }
-    
-    public @Nullable String getName() {
-        return name;
-    }
-    
-    public @Nullable String getModel() {
-        return model;
-    }
-    
-    public @Nullable String getSerialNumber() {
-        return serialNumber;
-    }
-    
-    public @Nullable String getMacAddress() {
-        return macAddress;
-    }
-    
-    public @Nullable String getStatus() {
-        return status;
-    }
-    
-    public @Nullable Integer getRainDelay() {
-        return rainDelay;
-    }
-    
-    public @Nullable Instant getRainDelayExpirationDate() {
-        return rainDelayExpirationDate;
-    }
-    
-    public @Nullable List<RachioZone> getZones() {
-        return zones;
-    }
-    
-    public @Nullable Instant getCreatedDate() {
-        return createdDate;
-    }
-    
-    public @Nullable Instant getUpdatedDate() {
-        return updatedDate;
-    }
-    
-    public @Nullable Double getElevation() {
-        return elevation;
-    }
-    
-    public @Nullable Boolean isFlexScheduleRules() {
-        return flexScheduleRules;
-    }
-    
-    public @Nullable Double getLatitude() {
-        return latitude;
-    }
-    
-    public @Nullable Double getLongitude() {
-        return longitude;
-    }
-    
-    public @Nullable String getTimeZone() {
-        return timeZone;
-    }
-    
-    public @Nullable String getScheduleModeType() {
-        return scheduleModeType;
+    @Override
+    public String toString() {
+        return "RachioDevice [id=" + id + ", name=" + name + ", model=" + model + 
+               ", serialNumber=" + serialNumber + ", macAddress=" + macAddress + 
+               ", status=" + status + ", online=" + online + 
+               ", rainDelayExpiration=" + rainDelayExpiration + ", paused=" + paused + 
+               ", firmwareVersion=" + firmwareVersion + ", zones=" + zones + "]";
     }
 }
