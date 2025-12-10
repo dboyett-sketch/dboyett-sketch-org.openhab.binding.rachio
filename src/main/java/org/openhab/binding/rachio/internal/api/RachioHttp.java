@@ -21,8 +21,6 @@ import org.openhab.binding.rachio.internal.api.dto.RachioSchedule;
 import org.openhab.binding.rachio.internal.api.dto.RachioForecast;
 import org.openhab.binding.rachio.internal.api.dto.RachioUsage;
 import org.openhab.binding.rachio.internal.api.dto.RachioAlert;
-import org.openhab.binding.rachio.internal.api.dto.RachioApiWebHookList;
-import org.openhab.binding.rachio.internal.api.dto.RachioApiWebHookEntry;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -54,7 +52,8 @@ public class RachioHttp {
         Instant lastUpdated;
     }
 
-    public RachioHttp(HttpClientFactory httpClientFactory, RachioBridgeConfiguration config) {
+    // FIXED: Removed HttpClientFactory parameter - using Java HttpClient directly
+    public RachioHttp(RachioBridgeConfiguration config) {
         this.config = config;
         
         // Create Java HttpClient with appropriate settings
@@ -104,7 +103,7 @@ public class RachioHttp {
      * Generic HTTP request method using Java HttpClient
      */
     private @Nullable String makeRequest(String method, String endpoint, @Nullable Object data) throws RachioApiException {
-        String url = "https://api.rach.io/1/public/" + endpoint;
+        String url = "https://api.rachio/1/public/" + endpoint;
         
         try {
             // Build the request using Java HttpClient
@@ -174,10 +173,16 @@ public class RachioHttp {
      * Get all devices for the person
      */
     public @Nullable List<RachioDevice> getDevices() throws RachioApiException {
-        String response = get("person/" + config.personId + "/device");
+        // First get person info to get personId
+        RachioPerson person = getPersonInfo();
+        if (person == null || person.id == null) {
+            throw new RachioApiException("Could not get person info");
+        }
+        
+        String response = get("person/" + person.id + "/device");
         if (response != null) {
             JsonObject json = JsonParser.parseString(response).getAsJsonObject();
-            return gson.fromJson(json.get("devices"), List.class);
+            return gson.fromJson(json.get("devices"), new com.google.gson.reflect.TypeToken<List<RachioDevice>>(){}.getType());
         }
         return null;
     }
@@ -345,7 +350,7 @@ public class RachioHttp {
         }
         String response = get("device/" + deviceId + "/alerts");
         if (response != null) {
-            return gson.fromJson(response, List.class);
+            return gson.fromJson(response, new com.google.gson.reflect.TypeToken<List<RachioAlert>>(){}.getType());
         }
         return null;
     }
@@ -359,7 +364,7 @@ public class RachioHttp {
         }
         String response = get("device/" + deviceId + "/schedule");
         if (response != null) {
-            return gson.fromJson(response, List.class);
+            return gson.fromJson(response, new com.google.gson.reflect.TypeToken<List<RachioSchedule>>(){}.getType());
         }
         return null;
     }
