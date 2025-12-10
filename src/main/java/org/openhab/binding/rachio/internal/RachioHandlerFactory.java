@@ -8,10 +8,8 @@ import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.binding.BaseThingHandlerFactory;
 import org.openhab.core.thing.binding.ThingHandler;
 import org.openhab.core.thing.binding.ThingHandlerFactory;
-import org.openhab.core.io.net.http.HttpClientFactory;
 import org.osgi.service.component.annotations.Activate;
 import org.osgi.service.component.annotations.Component;
-import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -24,7 +22,6 @@ import static org.openhab.binding.rachio.internal.RachioBindingConstants.*;
 public class RachioHandlerFactory extends BaseThingHandlerFactory {
 
     private final Logger logger = LoggerFactory.getLogger(RachioHandlerFactory.class);
-    private final HttpClientFactory httpClientFactory;
 
     private static final Set<ThingTypeUID> SUPPORTED_THING_TYPES = Set.of(
         THING_TYPE_BRIDGE,
@@ -33,8 +30,7 @@ public class RachioHandlerFactory extends BaseThingHandlerFactory {
     );
 
     @Activate
-    public RachioHandlerFactory(@Reference HttpClientFactory httpClientFactory) {
-        this.httpClientFactory = httpClientFactory;
+    public RachioHandlerFactory() {
         logger.debug("RachioHandlerFactory activated");
     }
 
@@ -53,7 +49,7 @@ public class RachioHandlerFactory extends BaseThingHandlerFactory {
 
         if (THING_TYPE_BRIDGE.equals(thingTypeUID)) {
             logger.debug("Creating RachioBridgeHandler");
-            return new org.openhab.binding.rachio.internal.handler.RachioBridgeHandler((Bridge) thing, httpClientFactory);
+            return new org.openhab.binding.rachio.internal.handler.RachioBridgeHandler((Bridge) thing);
         } else if (THING_TYPE_DEVICE.equals(thingTypeUID)) {
             logger.debug("Creating RachioDeviceHandler");
             return new org.openhab.binding.rachio.internal.handler.RachioDeviceHandler(thing);
