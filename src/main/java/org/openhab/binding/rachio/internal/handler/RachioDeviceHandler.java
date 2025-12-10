@@ -178,7 +178,7 @@ public class RachioDeviceHandler extends RachioHandler {
         }
         
         // Update rain delay
-        if (device.rainDelayExpiration != null) {
+        if (device.getRainDelayExpiration != null) {
             long expiration = device.getRainDelayExpiration * 1000; // Convert seconds to milliseconds
             updateState(CHANNEL_RAIN_DELAY_EXPIRATION, new DateTimeType(Instant.ofEpochMilli(expiration)));
             
