@@ -100,6 +100,7 @@ public abstract class RachioHandler extends BaseThingHandler implements RachioSt
 
     protected abstract void pollStatus() throws RachioApiException;
 
+    // FIXED: Removed @Override annotation - this is not overriding a method
     protected void updateRateLimitChannels() {
         RachioHttp http = rachioHttp;
         if (http != null) {
@@ -111,7 +112,7 @@ public abstract class RachioHandler extends BaseThingHandler implements RachioSt
                     // Get the first entry or use a default key
                     Integer remaining = rateLimits.values().iterator().next();
                     
-                    // FIXED: Convert Integer to String for StringType channels
+                    // Convert Integer to String for StringType channels
                     updateState(CHANNEL_RATE_LIMIT_REMAINING, new StringType(remaining.toString()));
                     
                     // Calculate percentage (assuming 1000 is max)
@@ -145,6 +146,14 @@ public abstract class RachioHandler extends BaseThingHandler implements RachioSt
     @Override
     public void onStatusChanged(ThingStatus status, ThingStatusDetail detail, @Nullable String message) {
         updateStatus(status, detail, message);
+    }
+
+    @Override
+    public void onWebhookEvent(String deviceId, String eventType, 
+                               @Nullable String subType, 
+                               @Nullable Map<String, Object> eventData) {
+        // Base implementation - subclasses can override
+        logger.debug("Base webhook event: {} for device {}", eventType, deviceId);
     }
 
     // Getters for subclasses
