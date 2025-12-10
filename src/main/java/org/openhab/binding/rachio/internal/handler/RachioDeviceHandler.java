@@ -169,17 +169,17 @@ public class RachioDeviceHandler extends RachioHandler {
     private void updateDeviceChannels(RachioDevice device) {
         // Update status channel
         if (device.status != null) {
-            updateState(CHANNEL_DEVICE_STATUS, new StringType(device.status));
+            updateState(CHANNEL_DEVICE_STATUS, new StringType(device.getStatus));
         }
         
         // Update online status
         if (device.online != null) {
-            updateState(CHANNEL_DEVICE_ONLINE, device.online ? OnOffType.ON : OnOffType.OFF);
+            updateState(CHANNEL_DEVICE_ONLINE, device.getOnline ? OnOffType.ON : OnOffType.OFF);
         }
         
         // Update rain delay
         if (device.rainDelayExpiration != null) {
-            long expiration = device.rainDelayExpiration * 1000; // Convert seconds to milliseconds
+            long expiration = device.getRainDelayExpiration * 1000; // Convert seconds to milliseconds
             updateState(CHANNEL_RAIN_DELAY_EXPIRATION, new DateTimeType(Instant.ofEpochMilli(expiration)));
             
             // Calculate remaining rain delay in hours
