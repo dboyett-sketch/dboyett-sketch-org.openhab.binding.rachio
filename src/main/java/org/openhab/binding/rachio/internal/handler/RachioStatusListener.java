@@ -36,57 +36,80 @@ public interface RachioStatusListener {
     void onWebhookEvent(String deviceId, String eventType, 
                         @Nullable String subType, 
                         @Nullable Map<String, Object> eventData);
-}
-
-
-private final Set<RachioStatusListener> statusListeners = ConcurrentHashMap.newKeySet();
-
-public void registerStatusListener(RachioStatusListener listener) {
-    if (listener != null) {
-        statusListeners.add(listener);
-        logger.debug("Registered status listener: {}", listener.getListenerDescription());
-    }
-}
-
-public void unregisterStatusListener(RachioStatusListener listener) {
-    if (listener != null) {
-        statusListeners.remove(listener);
-        logger.debug("Unregistered status listener: {}", listener.getListenerDescription());
-    }
-}
-
-protected void notifyStatusListeners(ThingStatus status, ThingStatusDetail detail, @Nullable String message) {
-    for (RachioStatusListener listener : statusListeners) {
-        if (listener.isActive()) {
-            try {
-                listener.onStatusChanged(status, detail, message);
-            } catch (Exception e) {
-                logger.warn("Error notifying status listener {}", listener.getListenerDescription(), e);
-            }
-        }
-    }
-}
-
-protected void notifyDeviceUpdated(String deviceId) {
-    for (RachioStatusListener listener : statusListeners) {
-        if (listener.isActive() && (listener.isForDevice(deviceId) || listener.isForThing(deviceId))) {
-            try {
-                listener.onDeviceUpdated(deviceId);
-            } catch (Exception e) {
-                logger.warn("Error notifying device update to listener {}", listener.getListenerDescription(), e);
-            }
-        }
-    }
-}
-
-protected void notifyZoneUpdated(String zoneId) {
-    for (RachioStatusListener listener : statusListeners) {
-        if (listener.isActive() && listener.isForZone(zoneId)) {
-            try {
-                listener.onZoneUpdated(zoneId);
-            } catch (Exception e) {
-                logger.warn("Error notifying zone update to listener {}", listener.getListenerDescription(), e);
-            }
-        }
-    }
+    
+    /**
+     * This method is called when a specific device is updated.
+     *
+     * @param deviceId the device ID that was updated
+     */
+    void onDeviceUpdated(String deviceId);
+    
+    /**
+     * This method is called when a specific zone is updated.
+     *
+     * @param zoneId the zone ID that was updated
+     */
+    void onZoneUpdated(String zoneId);
+    
+    /**
+     * This method is called when rate limit information changes.
+     *
+     * @param remainingRequests the number of remaining API requests
+     * @param limit the total API request limit
+     * @param resetTime the time when the rate limit resets (milliseconds since epoch)
+     */
+    void onRateLimitChanged(int remainingRequests, int limit, long resetTime);
+    
+    /**
+     * This method is called when connection status changes.
+     *
+     * @param connected true if connected, false if disconnected
+     * @param message optional message describing the connection change
+     */
+    void onConnectionChanged(boolean connected, @Nullable String message);
+    
+    /**
+     * This method is called when an error occurs.
+     *
+     * @param errorMessage the error message
+     * @param exception the exception that occurred, if any
+     */
+    void onError(String errorMessage, @Nullable Throwable exception);
+    
+    /**
+     * Returns the thing ID for this listener.
+     *
+     * @return the thing ID or null if not applicable
+     */
+    @Nullable String getThingId();
+    
+    /**
+     * Returns true if this listener is for the specified device.
+     *
+     * @param deviceId the device ID to check
+     * @return true if this listener handles the specified device
+     */
+    boolean isForDevice(String deviceId);
+    
+    /**
+     * Returns true if this listener is active.
+     *
+     * @return true if the listener is active and should receive notifications
+     */
+    boolean isActive();
+    
+    /**
+     * Returns a description of this listener for logging purposes.
+     *
+     * @return listener description
+     */
+    String getListenerDescription();
+    
+    /**
+     * Returns true if this listener is for the specified zone.
+     *
+     * @param zoneId the zone ID to check
+     * @return true if this listener handles the specified zone
+     */
+    boolean isForZone(String zoneId);
 }
