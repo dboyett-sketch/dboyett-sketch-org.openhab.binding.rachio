@@ -3,6 +3,8 @@ package org.openhab.binding.rachio.internal;
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.openhab.core.thing.ThingTypeUID;
 
+import java.util.Set;
+
 /**
  * The {@link RachioBindingConstants} class defines common constants, which are
  * used across the whole binding.
@@ -112,6 +114,7 @@ public class RachioBindingConstants {
     // Rate limiting channels
     public static final String CHANNEL_RATE_LIMIT_REMAINING = "rate-limit-remaining";
     public static final String CHANNEL_RATE_LIMIT_PERCENTAGE = "rate-limit-percentage";
+    public static final String CHANNEL_RATE_LIMIT_PERCENT = "rate-limit-percent";  // ADDED - Missing constant
     public static final String CHANNEL_RATE_LIMIT_STATUS = "rate-limit-status";
     public static final String CHANNEL_RATE_LIMIT_RESET = "rate-limit-reset";
 
@@ -262,5 +265,52 @@ public class RachioBindingConstants {
     public static final String CONFIG_KEY_PERSON_ID = "personId";
     public static final String CONFIG_KEY_DEVICE_ID = "deviceId";
     public static final String CONFIG_KEY_ZONE_ID = "zoneId";
+
+    // ===== CRITICAL ADDITIONS - MISSING CONSTANTS =====
+    
+    // Supported thing types set - THIS WAS MISSING
+    public static final Set<ThingTypeUID> SUPPORTED_THING_TYPES_UIDS = Set.of(
+        THING_TYPE_BRIDGE, THING_TYPE_DEVICE, THING_TYPE_ZONE
+    );
+
+    // Bridge configuration getter methods - referenced in code
+    public static final String BRIDGE_CONFIG_WEBHOOK_URL = "webhookUrl";
+    public static final String BRIDGE_CONFIG_WEBHOOK_SECRET = "webhookSecret";
+    
+    // Additional missing configuration keys
     public static final String CONFIG_KEY_DEFAULT_DURATION = "defaultDuration";
+    public static final String CONFIG_KEY_DEVICE_NAME = "deviceName";
+    public static final String CONFIG_KEY_ZONE_NAME = "zoneName";
+    public static final String CONFIG_KEY_ZONE_NUMBER = "zoneNumber";
+    
+    // Additional event types that might be needed
+    public static final String EVENT_TYPE_ZONE_STARTED = "ZONE_STARTED";
+    public static final String EVENT_TYPE_ZONE_STOPPED = "ZONE_STOPPED";
+    public static final String EVENT_TYPE_ZONE_COMPLETED = "ZONE_COMPLETED";
+    public static final String EVENT_TYPE_DEVICE_ONLINE = "DEVICE_ONLINE";
+    public static final String EVENT_TYPE_DEVICE_OFFLINE = "DEVICE_OFFLINE";
+    
+    // Rate limit method names for RachioHttp
+    public static final String METHOD_GET_RATE_LIMITS = "getRateLimits";
+    public static final String METHOD_GET_RATE_LIMIT_RESET = "getRateLimitReset";
+    
+    // Handler method names for logging/debugging
+    public static final String METHOD_GET_BRIDGE_CONFIG = "getBridgeConfig";
+    public static final String METHOD_GET_HTTP_CLIENT = "getHttpClient";
+    public static final String METHOD_IS_WEBHOOK_CONFIGURED = "isWebhookConfigured";
+    
+    // Discovery service constants
+    public static final String DISCOVERY_SERVICE_BACKGROUND = "startBackgroundDiscovery";
+    public static final String DISCOVERY_SERVICE_SCAN = "startScan";
+    
+    // Webhook event parsing method
+    public static final String METHOD_PARSE_WEBHOOK_EVENT = "parseWebhookEvent";
+    
+    // Security-related methods
+    public static final String METHOD_IS_IP_ALLOWED = "isIpAllowed";
+    public static final String METHOD_GET_GSON = "getGson";
+    public static final String METHOD_HANDLE_WEBHOOK_EVENT = "handleWebhookEvent";
+    
+    // Scheduler reference for RachioSecurity
+    public static final String SCHEDULER_REFERENCE = "scheduler";
 }
