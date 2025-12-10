@@ -6,6 +6,7 @@ import org.openhab.binding.rachio.internal.handler.RachioBridgeHandler;
 import org.openhab.core.config.discovery.AbstractDiscoveryService;
 import org.openhab.core.config.discovery.DiscoveryResult;
 import org.openhab.core.config.discovery.DiscoveryResultBuilder;
+import org.openhab.binding.rachio.internal.api.dto.RachioDevice;
 import org.openhab.core.thing.ThingTypeUID;
 import org.openhab.core.thing.ThingUID;
 import org.slf4j.Logger;
