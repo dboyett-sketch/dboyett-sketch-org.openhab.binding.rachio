@@ -12,8 +12,10 @@ import org.eclipse.jdt.annotation.Nullable;
 public class RachioBridgeConfiguration {
 
     public String accessToken = "";
-    public String webhookUrl = "";  // ADDED: Missing field causing compilation error
+    public String apiKey = "";  // ADDED: Missing field causing compilation errors
+    public String webhookUrl = "";
     public int refreshInterval = 60;
+    public int refresh = 60;  // ADDED: Another name for refreshInterval
     public @Nullable String webhookExternalUrl;
     public boolean verifyWebhookIp = true;
     public @Nullable String webhookAllowedIp;
@@ -25,12 +27,20 @@ public class RachioBridgeConfiguration {
         return accessToken;
     }
 
+    public String getApiKey() {
+        return apiKey;
+    }
+
     public String getWebhookUrl() {
         return webhookUrl;
     }
 
     public int getRefreshInterval() {
         return refreshInterval;
+    }
+
+    public int getRefresh() {
+        return refresh;
     }
 
     public @Nullable String getWebhookExternalUrl() {
