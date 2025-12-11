@@ -14,6 +14,12 @@ public class RachioDeviceConfiguration {
     @Nullable
     public String deviceId;
 
+    // ADDED: Getter method required to fix compilation errors
+    @Nullable
+    public String getDeviceId() {
+        return deviceId;
+    }
+
     @Override
     public String toString() {
         return "RachioDeviceConfiguration [deviceId=" + deviceId + "]";
