@@ -1,0 +1,305 @@
+ENHANCED OPENHAB 5.x RACHIO BINDING DEVELOPMENT & AUDIT PROMPT
+CONTEXT & OBJECTIVES
+
+You are a senior OpenHAB binding architect with expertise in:
+
+    OpenHAB 5.x migration from legacy 2.x/3.x architectures
+
+    Professional irrigation system integration (Rachio-specific)
+
+    Enterprise-grade security implementation (HMAC, IP filtering, rate limiting)
+
+    OSGi declarative services and modern Java HttpClient patterns
+
+    Webhook systems with self-healing capabilities
+
+Primary Goal: Transform the existing Rachio binding into a production-ready, professional-grade OpenHAB 5.x addon that exceeds the original 2.5 binding's capabilities while maintaining full API coverage.
+
+Reference Materials Available:
+
+    Complete repository analysis (dboyett-sketch/dboyett-sketch-org.openhab.binding.rachio)
+
+    Rachio API documentation (rachio.readme.io)
+
+    Detailed feature matrix showing 90% completion with 50% professional enhancements
+
+    Webhook system analysis with HMAC/IP filtering implementation
+
+    Rate limiting system with adaptive polling dashboard
+
+    Security audit results
+
+    IP filtering implementation details
+
+ARCHITECTURAL REQUIREMENTS
+1. OPENHAB 5.x MODERNIZATION MANDATES
+text
+
+- Use Java 17+ language features where appropriate
+- Implement OSGi 7.x Declarative Services (org.osgi.service.component.annotations)
+- Replace HttpURLConnection with modern java.net.http.HttpClient
+- Adopt dynamic channel creation patterns for professional irrigation data
+- Ensure all Thing/Channel UIDs align with RachioBindingConstants
+- Servlet registration MUST use Whiteboard Pattern (@Component with osgi.http.whiteboard properties)
+
+2. PROFESSIONAL IRRIGATION DATA EXPOSURE
+
+The binding MUST expose all Rachio professional data through dynamically created channels:
+text
+
+✅ Soil Properties: soilType, soilAvailableWater, infiltrationRate
+✅ Crop Data: cropType, cropCoefficient, rootDepth
+✅ Nozzle Details: nozzleType, nozzleInchesPerHour, precipitationRate
+✅ Environmental: slopeType, shadeType, efficiency
+✅ Water Adjustments: 5 levels (adjustmentLevel1-5) + zoneArea
+✅ Analytics: wateringHistory, forecast, usage, savings, alerts
+
+3. ENTERPRISE SECURITY IMPLEMENTATION
+text
+
+WEBHOOK SECURITY:
+- HMAC-SHA256 validation with constant-time comparison
+- Configurable IP filtering (CIDR + exact IP + AWS ranges)
+- Proxy-aware IP extraction (X-Forwarded-For support)
+- Automatic webhook health checks (every 120s) with re-registration
+
+RATE LIMITING:
+- Parse X-RateLimit-* headers from Rachio API
+- Implement adaptive polling (1x normal, 2x warning, 3x critical)
+- Create 4 bridge monitoring channels:
+  • rateLimitRemaining (Number)
+  • rateLimitPercent (String %)
+  • rateLimitStatus (String)
+  • rateLimitReset (Number seconds)
+
+CREDENTIAL MANAGEMENT:
+- API key storage in secure configuration
+- No hardcoded secrets
+- Configuration encryption compatibility
+
+4. COMPLETE API COVERAGE REQUIREMENTS
+
+Based on Rachio API documentation, ensure implementation of:
+
+ESSENTIAL ENDPOINTS (Priority 1):
+text
+
+✅ /person/{id}           - Person/account data
+✅ /device/{id}           - Controller information
+✅ /device/{id}/zone      - Zone configurations
+✅ /zone/{id}/start       - Manual zone control
+✅ /zone/{id}/stop        - Stop watering
+✅ /device/{id}/pause     - Pause all watering
+✅ /webhook               - Webhook registration/deletion
+
+PROFESSIONAL ENDPOINTS (Priority 2):
+text
+
+✅ /device/{id}/forecast  - Weather intelligence
+✅ /device/{id}/usage     - Water usage analytics
+✅ /device/{id}/savings   - Environmental savings
+✅ /device/{id}/alerts    - System alerts
+✅ /schedule              - Schedule management
+✅ /zone/{id}/watering    - Watering history
+
+EVENT TYPES (All must be processed):
+text
+
+DEVICE_STATUS, RAIN_DELAY, WEATHER_INTELLIGENCE, WATER_BUDGET,
+SCHEDULE_STATUS, ZONE_STATUS, RAIN_SENSOR_DETECTION, ZONE_DELTA, DELTA
+
+TECHNICAL AUDIT CHECKLIST
+BLOCKING ISSUES (Must fix for compilation)
+text
+
+[ ] Verify pom.xml uses OpenHAB 5.x dependencies: [5.0.0,6.0.0)
+[ ] Confirm OSGi @Component annotations (not legacy javax)
+[ ] Validate servlet registration uses Whiteboard Pattern
+[ ] Check RachioBindingConstants aligns with thing-types.xml
+[ ] Ensure HttpClientFactory injection (not manual HttpClient creation)
+[ ] Verify all DTOs exist and compile (RachioDevice, RachioZone, etc.)
+
+ARCHITECTURAL INTEGRITY CHECKS
+text
+
+[ ] Bridge → Device → Zone hierarchy follows OpenHAB patterns
+[ ] Configuration objects (RachioBridgeConfiguration, etc.) validate properly
+[ ] Discovery service automatically finds devices and zones
+[ ] Status listeners are registered/unregistered with lifecycle
+[ ] All schedulers are properly managed (dispose() methods)
+[ ] Resource leaks prevented (HTTP responses closed, streams managed)
+
+DATA FLOW VALIDATION
+text
+
+COMMAND FLOW: UI Command → ZoneHandler → BridgeHandler → RachioHttp → Rachio API
+WEBHOOK FLOW: Rachio POST → Servlet → Security → BridgeHandler → Device/Zone Handlers
+DISCOVERY: DiscoveryService → API calls → Thing creation → Handler initialization
+
+SPECIALIZED FEATURE VALIDATION
+WEBHOOK SYSTEM VERIFICATION
+text
+
+✅ Registration: Creates webhook with 9 event types (IDs 5-14)
+✅ Security: IP filtering + HMAC validation (if secret available)
+✅ Health: Auto-recovery if webhook disappears (every 120s check)
+✅ Processing: Async event handling to prevent blocking
+✅ Cleanup: Proper disposal removes webhook from Rachio
+
+RATE LIMITING IMPLEMENTATION
+text
+
+✅ Header Parsing: X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset
+✅ Adaptive Behavior: Normal (1x), Warning@10% (2x), Critical@2% (3x)
+✅ Dashboard: 4 channels on bridge for real-time monitoring
+✅ Logging: Warnings at 10%, Errors at 2%, Recovery messages
+
+PROFESSIONAL IRRIGATION DATA
+text
+
+✅ Dynamic Channels: Soil, crop, nozzle, environmental properties
+✅ Weather Intelligence: Forecast data with ET calculations
+✅ Analytics: Usage tracking, savings reporting, alert system
+✅ Schedule Management: Flex schedules with weather adjustments
+
+DELIVERABLES EXPECTED
+1. COMPREHENSIVE AUDIT REPORT
+text
+
+For each file:
+- Status (✅ COMPLETE | ⚠️ WARNING | ❌ ERROR)
+- OpenHAB 5.x compliance assessment
+- Specific issues with line numbers and fixes
+- Priority rating (BLOCKING/MAJOR/MODERATE/MINOR)
+
+2. PRIORITIZED REMEDIATION PLAN
+text
+
+PHASE 1: FOUNDATION (Week 1)
+1. Update pom.xml to OpenHAB 5.0.1+ dependencies
+2. Refactor OSGi annotations to DS 1.4+
+3. Fix servlet registration pattern
+4. Resolve compilation errors
+
+PHASE 2: CORE FUNCTIONALITY (Week 2)
+5. Validate Thing/Channel UID consistency
+6. Fix handler initialization sequences
+7. Implement missing API methods (runAllZones, rainDelay, runNextZone)
+
+PHASE 3: PROFESSIONAL FEATURES (Week 3)
+8. Expose professional irrigation channels
+9. Complete weather intelligence integration
+10. Implement adaptive rate limiting dashboard
+
+PHASE 4: SECURITY & POLISH (Week 4)
+11. Enhance HMAC/IP filtering with constant-time comparison
+12. Add comprehensive logging and error handling
+13. Performance optimization and memory leak prevention
+
+3. ARCHITECTURAL ASSESSMENT
+text
+
+STRENGTHS:
+- Modern HttpClient vs legacy HttpURLConnection
+- Complete DTO hierarchy with professional irrigation data
+- Self-healing webhook system with health monitoring
+- Rate limiting dashboard (4 monitoring channels)
+
+WEAKNESSES:
+- Single-device webhook assumption
+- Potential missing webhook secret handling
+- Limited multi-controller support
+
+OPPORTUNITIES:
+- Advanced weather service integrations
+- Multi-controller management dashboard
+- Predictive watering based on forecast
+
+THREATS:
+- Rachio API changes breaking compatibility
+- Rate limiting too aggressive for large systems
+- Security vulnerabilities in IP filtering
+
+4. COMPLETENESS MATRIX
+text
+
+Feature Category           | Implementation | 5.x Ready | Notes
+--------------------------|----------------|-----------|------------------------
+Core Handlers             |     100%       |    ✅     | Bridge→Device→Zone hierarchy
+API Communication         |     95%        |    ✅     | Modern HttpClient implemented
+Webhook System            |     100%       |    ✅     | HMAC + IP filtering + auto-recovery
+Discovery Service         |     100%       |    ✅     | Auto-discovers devices and zones
+Professional Irrigation   |     100%       |    ✅     | Soil, crop, nozzle data exposed
+Security                  |     100%       |    ✅     | Enterprise-grade with monitoring
+Rate Limiting             |     100%       |    ✅     | Adaptive polling + dashboard
+Error Handling            |     90%        |    ⚠️     | Needs more specific exception types
+Documentation             |     70%        |    ❌     | Requires comprehensive user guide
+
+TESTING STRATEGY RECOMMENDATION
+UNIT TESTS (Essential)
+text
+
+- RachioHttp: API call simulations with rate limiting
+- RachioSecurity: IP filtering and HMAC validation
+- DTOs: JSON serialization/deserialization
+- Configuration: Validation logic
+
+INTEGRATION TESTS (Critical)
+text
+
+1. Webhook Registration Cycle:
+   Register → Verify → Health Check → Re-register → Delete
+
+2. Rate Limiting Simulation:
+   Mock headers → Verify adaptive polling → Check dashboard updates
+
+3. Command Execution:
+   UI command → API call → Response handling → State update
+
+4. Professional Data Exposure:
+   Verify all irrigation channels created and updated
+
+ACCEPTANCE CRITERIA
+text
+
+✅ Compiles without errors or warnings
+✅ Installs in OpenHAB 5.0.1+ via addons.cfg
+✅ Discovers Rachio controller automatically
+✅ Registers webhook successfully (visible in Rachio app)
+✅ Processes incoming webhook events (zone start/stop)
+✅ Exposes professional irrigation data through channels
+✅ Adapts polling based on rate limits
+✅ Securely validates webhooks with IP filtering
+✅ Clean disposal removes webhook registration
+
+MIGRATION NOTES FOR DEVELOPER
+text
+
+The developer has intermediate Java skills but limited OpenHAB 5.x experience. Provide:
+
+1. EXPLANATIONS: Why OpenHAB 5.x requires specific patterns (not just what to change)
+2. REFERENCES: Links to official OpenHAB documentation and example bindings
+3. EXAMPLES: Corrected code snippets for the 3 most critical issues
+4. PROGRESSION: Step-by-step migration path from current state to production-ready
+
+Key Education Points:
+- OSGi DS vs legacy annotations: Constructor injection is preferred
+- HttpClient vs HttpURLConnection: Better performance, HTTP/2 support
+- Dynamic channels vs static: Allows runtime updates based on device capabilities
+- Whiteboard Pattern vs manual servlet registration: OSGi-managed lifecycle
+
+FINAL ASSESSMENT EXPECTED
+text
+
+Provide a line-by-line audit with:
+- Exact compilation errors and fixes
+- OSGi service registration issues
+- Architectural pattern violations
+- Security implementation gaps
+- Performance optimization opportunities
+
+Include specific file references and code snippets for each issue, prioritizing:
+1. BLOCKING: Must fix to compile
+2. MAJOR: Will cause runtime failures  
+3. MODERATE: Functional limitations
+4. MINOR: Code quality improvements
