@@ -3,9 +3,9 @@
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
          xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 
          http://maven.apache.org/xsd/maven-4.0.0.xsd">
-    
+
     <modelVersion>4.0.0</modelVersion>
-    
+
     <!-- OpenHAB 5.x BOM -->
     <parent>
         <groupId>org.openhab.core.bom</groupId>
@@ -13,22 +13,22 @@
         <version>5.0.1</version>
         <relativePath />
     </parent>
-    
+
     <groupId>org.openhab.addons.bundles</groupId>
     <artifactId>org.openhab.binding.rachio</artifactId>
     <version>5.0.1-SNAPSHOT</version>
-    
+
     <name>OpenHAB Rachio Binding</name>
     <description>OpenHAB binding for Rachio Smart Sprinkler Controllers</description>
     <packaging>bundle</packaging>
-    
+
     <properties>
-        <!-- Java 17+ for OpenHAB 5.x -->
+        <!-- Java 17+ for OpenHAB 5.x and java.net.http.HttpClient -->
         <maven.compiler.source>17</maven.compiler.source>
         <maven.compiler.target>17</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
-        
+
         <!-- Maven plugins -->
         <maven-bundle-plugin.version>5.1.8</maven-bundle-plugin.version>
         <maven-javadoc-plugin.version>3.5.0</maven-javadoc-plugin.version>
@@ -36,94 +36,107 @@
         <maven-jacoco-plugin.version>0.8.9</maven-jacoco-plugin.version>
         <maven-surefire-plugin.version>3.0.0-M9</maven-surefire-plugin.version>
     </properties>
-    
+
     <dependencies>
         <!-- ===== OPENHAB CORE DEPENDENCIES (Minimal) ===== -->
-        
+
         <!-- Core Thing infrastructure -->
         <dependency>
             <groupId>org.openhab.core</groupId>
             <artifactId>org.openhab.core.thing</artifactId>
         </dependency>
-        
+
         <dependency>
             <groupId>org.openhab.core</groupId>
             <artifactId>org.openhab.core.config.core</artifactId>
         </dependency>
-        
+
         <dependency>
             <groupId>org.openhab.core</groupId>
             <artifactId>org.openhab.core.library</artifactId>
         </dependency>
-        
+
+        <!-- Common annotations and utilities -->
+        <dependency>
+            <groupId>org.openhab.core</groupId>
+            <artifactId>org.openhab.core.common</artifactId>
+        </dependency>
+
         <!-- Discovery service -->
         <dependency>
             <groupId>org.openhab.core</groupId>
             <artifactId>org.openhab.core.thing.xml</artifactId>
         </dependency>
-        
+
         <!-- OSGi DS Annotations (MUST HAVE) -->
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.service.component.annotations</artifactId>
         </dependency>
-        
+
         <!-- OSGi HTTP Whiteboard for servlets (MUST HAVE) -->
         <dependency>
             <groupId>org.osgi</groupId>
             <artifactId>org.osgi.service.http.whiteboard</artifactId>
             <version>1.0.0</version>
         </dependency>
-        
+
         <!-- Servlet API for webhooks -->
         <dependency>
             <groupId>javax.servlet</groupId>
             <artifactId>javax.servlet-api</artifactId>
             <scope>provided</scope>
         </dependency>
-        
+
         <!-- ===== THIRD-PARTY DEPENDENCIES ===== -->
-        
-        <!-- JSON Processing (Already in your code) -->
+
+        <!-- JSON Processing for DTOs -->
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>2.10.1</version>
         </dependency>
-        
+
         <!-- Logging -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
         </dependency>
-        
+
+        <!-- Apache Commons for IP validation and utilities -->
+        <dependency>
+            <groupId>commons-net</groupId>
+            <artifactId>commons-net</artifactId>
+            <version>3.9.0</version>
+        </dependency>
+
         <!-- ===== TEST DEPENDENCIES ===== -->
-        
+
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
-        
+
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
             <scope>test</scope>
         </dependency>
-        
+
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
-        
+
         <dependency>
             <groupId>org.openhab.core</groupId>
             <artifactId>org.openhab.core.test</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>
-    
+
     <build>
         <plugins>
             <!-- Maven Bundle Plugin -->
@@ -140,29 +153,31 @@
                         <Bundle-Vendor>OpenHAB Community</Bundle-Vendor>
                         <Bundle-Description>${project.description}</Bundle-Description>
                         <Bundle-DocURL>https://www.openhab.org/addons/bindings/rachio/</Bundle-DocURL>
-                        
+
                         <!-- Export packages (be selective) -->
                         <Export-Package>
                             org.openhab.binding.rachio.internal.api.dto,
                             org.openhab.binding.rachio.internal.config
                         </Export-Package>
-                        
-                        <!-- Import packages -->
+
+                        <!-- Import packages - CRITICAL FIX for Java HttpClient -->
                         <Import-Package>
                             !com.google.gson,
                             !com.google.gson.*,
+                            !org.apache.commons.net,
+                            !org.apache.commons.net.*,
                             org.openhab.core.*;version="[5.0,6.0)",
                             org.osgi.service.http.whiteboard;version="[1.0,2.0)",
                             javax.servlet;version="[3.1,4)",
                             javax.servlet.http;version="[3.1,4)",
                             *
                         </Import-Package>
-                        
+
                         <!-- Provide-Capability for OpenHAB -->
                         <Provide-Capability>
                             osgi.serviceloader;osgi.serviceloader=org.openhab.core.thing.binding.ThingHandlerFactory
                         </Provide-Capability>
-                        
+
                         <!-- Service-Component -->
                         <Service-Component>
                             OSGI-INF/*.xml
@@ -170,7 +185,7 @@
                     </instructions>
                 </configuration>
             </plugin>
-            
+
             <!-- Compiler Plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -185,7 +200,7 @@
                     </compilerArgs>
                 </configuration>
             </plugin>
-            
+
             <!-- Resources plugin -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -195,8 +210,20 @@
                     <encoding>UTF-8</encoding>
                 </configuration>
             </plugin>
+
+            <!-- Surefire for testing -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>${maven-surefire-plugin.version}</version>
+                <configuration>
+                    <includes>
+                        <include>**/*Test.java</include>
+                    </includes>
+                </configuration>
+            </plugin>
         </plugins>
-        
+
         <resources>
             <resource>
                 <directory>src/main/resources</directory>
