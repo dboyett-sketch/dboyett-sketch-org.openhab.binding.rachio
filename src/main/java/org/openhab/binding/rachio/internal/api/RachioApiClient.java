@@ -2,8 +2,11 @@ package org.openhab.binding.rachio.internal.api;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.Map;
+import org.eclipse.jdt.annotation.Nullable;
 import org.openhab.binding.rachio.internal.api.dto.*;
 import org.openhab.core.common.NamedThreadFactory;
 import org.slf4j.Logger;
@@ -14,57 +17,209 @@ import org.slf4j.LoggerFactory;
  */
 public class RachioApiClient {
     private final Logger logger = LoggerFactory.getLogger(RachioApiClient.class);
-    
+
     private static final String BASE_URL = "https://api.rach.io/1/public";
     private static final ObjectMapper mapper = new ObjectMapper();
-    
+
     private final RachioHttpClient httpClient;
     private final ScheduledExecutorService scheduler;
     
+    // Caching implementation for Option A
+    private final Map<String, RachioDevice> deviceCache = new ConcurrentHashMap<>();
+    private final Map<String, String> zoneToDeviceMap = new ConcurrentHashMap<>();
+    private final Map<String, Long> cacheTimestamps = new ConcurrentHashMap<>();
+    private static final long CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
     public RachioApiClient(String apiKey) {
         this.httpClient = new RachioHttpClient(apiKey);
         this.scheduler = java.util.concurrent.Executors.newSingleThreadScheduledExecutor(
             new NamedThreadFactory("rachio-polling", true)
         );
-        
+
         // Start periodic status updates
         startPolling();
     }
-    
+
     public void dispose() {
         scheduler.shutdown();
     }
-    
+
     // Device operations
     public List<RachioDevice> getDevices() throws RachioApiException {
         String response = httpClient.get(BASE_URL + "/person/info");
         try {
             RachioPerson person = mapper.readValue(response, RachioPerson.class);
-            return person.getDevices();
+            List<RachioDevice> devices = person.getDevices();
+            
+            // Update cache with fresh device data
+            if (devices != null) {
+                for (RachioDevice device : devices) {
+                    String deviceId = device.getId();
+                    deviceCache.put(deviceId, device);
+                    cacheTimestamps.put(deviceId, System.currentTimeMillis());
+                    
+                    // Update zone-to-device mappings
+                    if (device.getZones() != null) {
+                        for (RachioZone zone : device.getZones()) {
+                            zoneToDeviceMap.put(zone.getId(), deviceId);
+                        }
+                    }
+                }
+            }
+            
+            return devices;
         } catch (Exception e) {
             throw new RachioApiException("Failed to parse devices", e);
         }
     }
-    
-    public RachioDevice getDevice(String deviceId) throws RachioApiException {
+
+    /**
+     * Get device with caching
+     */
+    public @Nullable RachioDevice getDevice(String deviceId) throws RachioApiException {
+        // Check cache first (if not expired)
+        RachioDevice cached = deviceCache.get(deviceId);
+        Long cacheTime = cacheTimestamps.get(deviceId);
+        
+        if (cached != null && cacheTime != null && 
+            (System.currentTimeMillis() - cacheTime) < CACHE_TTL_MS) {
+            return cached;
+        }
+        
+        // Cache miss or expired - fetch from API
         String response = httpClient.get(BASE_URL + "/device/" + deviceId);
         try {
-            return mapper.readValue(response, RachioDevice.class);
+            RachioDevice device = mapper.readValue(response, RachioDevice.class);
+            
+            // Update cache
+            deviceCache.put(deviceId, device);
+            cacheTimestamps.put(deviceId, System.currentTimeMillis());
+            
+            // Update zone-to-device mappings
+            if (device.getZones() != null) {
+                for (RachioZone zone : device.getZones()) {
+                    zoneToDeviceMap.put(zone.getId(), deviceId);
+                }
+            }
+            
+            return device;
         } catch (Exception e) {
             throw new RachioApiException("Failed to parse device", e);
         }
     }
-    
+
+    /**
+     * Get zone data by zone ID
+     * Fetches the parent device and extracts the specific zone
+     */
+    public @Nullable RachioZone getZone(String zoneId) throws RachioApiException {
+        // Check cache first
+        String deviceId = zoneToDeviceMap.get(zoneId);
+        if (deviceId == null) {
+            // We don't know which device this zone belongs to
+            // Need to search through user's devices
+            deviceId = findDeviceIdForZone(zoneId);
+            if (deviceId == null) {
+                logger.debug("Zone {} not found on any device", zoneId);
+                return null;
+            }
+        }
+        
+        // Get device (with caching)
+        RachioDevice device = getDevice(deviceId);
+        if (device == null || device.getZones() == null) {
+            logger.warn("Device {} not found or has no zones", deviceId);
+            return null;
+        }
+        
+        // Find the zone in device's zones
+        return device.getZones().stream()
+            .filter(zone -> zoneId.equals(zone.getId()))
+            .findFirst()
+            .orElse(null);
+    }
+
+    /**
+     * Find which device contains the specified zone
+     */
+    private @Nullable String findDeviceIdForZone(String zoneId) throws RachioApiException {
+        List<RachioDevice> devices = getDevices();
+        for (RachioDevice device : devices) {
+            if (device.getZones() != null) {
+                for (RachioZone zone : device.getZones()) {
+                    if (zoneId.equals(zone.getId())) {
+                        // Cache the mapping for future use
+                        zoneToDeviceMap.put(zoneId, device.getId());
+                        logger.debug("Mapped zone {} to device {}", zoneId, device.getId());
+                        return device.getId();
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
     // Zone operations
     public void startZone(String zoneId, int duration) throws RachioApiException {
         String body = String.format("{\"id\":\"%s\",\"duration\":%d}", zoneId, duration);
         httpClient.put(BASE_URL + "/zone/start", body);
+        
+        // Clear cache for the parent device since zone state changed
+        clearDeviceCacheForZone(zoneId);
     }
-    
+
     public void stopWatering(String deviceId) throws RachioApiException {
         httpClient.put(BASE_URL + "/device/" + deviceId + "/stop_water", "{}");
+        
+        // Clear cache for this device
+        clearDeviceCache(deviceId);
     }
     
+    // Device control methods needed for DeviceHandler
+    public void setRainDelay(String deviceId, int hours) throws RachioApiException {
+        String body = String.format("{\"hours\":%d}", hours);
+        httpClient.put(BASE_URL + "/device/" + deviceId + "/rain_delay", body);
+        clearDeviceCache(deviceId);
+    }
+    
+    public void pauseDevice(String deviceId, boolean pause) throws RachioApiException {
+        String action = pause ? "pause" : "resume";
+        httpClient.put(BASE_URL + "/device/" + deviceId + "/" + action, "{}");
+        clearDeviceCache(deviceId);
+    }
+    
+    public void setWaterBudget(String deviceId, int percentage) throws RachioApiException {
+        String body = String.format("{\"percentage\":%d}", percentage);
+        httpClient.put(BASE_URL + "/device/" + deviceId + "/water_budget", body);
+        clearDeviceCache(deviceId);
+    }
+    
+    public void runAllZones(String deviceId) throws RachioApiException {
+        httpClient.put(BASE_URL + "/device/" + deviceId + "/start", "{}");
+        clearDeviceCache(deviceId);
+    }
+    
+    public void runNextZone(String deviceId) throws RachioApiException {
+        httpClient.put(BASE_URL + "/device/" + deviceId + "/start_next", "{}");
+        clearDeviceCache(deviceId);
+    }
+    
+    public void turnDeviceOn(String deviceId) throws RachioApiException {
+        httpClient.put(BASE_URL + "/device/" + deviceId + "/on", "{}");
+        clearDeviceCache(deviceId);
+    }
+    
+    public void turnDeviceOff(String deviceId) throws RachioApiException {
+        httpClient.put(BASE_URL + "/device/" + deviceId + "/off", "{}");
+        clearDeviceCache(deviceId);
+    }
+    
+    public void setZoneEnabled(String zoneId, boolean enabled) throws RachioApiException {
+        String body = String.format("{\"enabled\":%b}", enabled);
+        httpClient.put(BASE_URL + "/zone/" + zoneId, body);
+        clearDeviceCacheForZone(zoneId);
+    }
+
     // Webhook operations
     public void registerWebhook(String url, String externalId) throws RachioApiException {
         String body = String.format(
@@ -73,11 +228,11 @@ public class RachioApiClient {
         );
         httpClient.post(BASE_URL + "/webhook", body);
     }
-    
+
     public void unregisterWebhook(String webhookId) throws RachioApiException {
         httpClient.delete(BASE_URL + "/webhook/" + webhookId);
     }
-    
+
     // Weather integration (uses existing DTOs)
     public RachioForecast getForecast(String deviceId) throws RachioApiException {
         String response = httpClient.get(BASE_URL + "/device/" + deviceId + "/forecast");
@@ -87,18 +242,45 @@ public class RachioApiClient {
             throw new RachioApiException("Failed to parse forecast", e);
         }
     }
+
+    // Cache management methods
+    public void clearCache() {
+        deviceCache.clear();
+        zoneToDeviceMap.clear();
+        cacheTimestamps.clear();
+        logger.debug("Cleared all API client caches");
+    }
+
+    public void clearDeviceCache(String deviceId) {
+        deviceCache.remove(deviceId);
+        cacheTimestamps.remove(deviceId);
+        // Remove all zones for this device from the mapping
+        zoneToDeviceMap.entrySet().removeIf(entry -> deviceId.equals(entry.getValue()));
+        logger.debug("Cleared cache for device {}", deviceId);
+    }
     
+    private void clearDeviceCacheForZone(String zoneId) {
+        String deviceId = zoneToDeviceMap.get(zoneId);
+        if (deviceId != null) {
+            clearDeviceCache(deviceId);
+        }
+    }
+    
+    public void invalidateCache() {
+        cacheTimestamps.clear(); // Force refresh on next getDevice() call
+        logger.debug("Invalidated cache timestamps");
+    }
+
     // Polling for status updates
     private void startPolling() {
         scheduler.scheduleWithFixedDelay(() -> {
             try {
-                // Poll device status every 5 minutes
-                // This can update thing status in handlers
-                logger.debug("Performing periodic Rachio status check");
-                // Implementation would notify listeners
+                // Periodically invalidate cache to ensure fresh data
+                invalidateCache();
+                logger.debug("Periodic cache invalidation completed");
             } catch (Exception e) {
-                logger.debug("Polling failed: {}", e.getMessage());
+                logger.debug("Cache invalidation failed: {}", e.getMessage());
             }
-        }, 5, 5, TimeUnit.MINUTES);
+        }, 10, 10, TimeUnit.MINUTES); // Invalidate cache every 10 minutes
     }
 }
