@@ -10,7 +10,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
-import org.openhab.binding.rachio.internal.api.DurationParser;
 import org.openhab.binding.rachio.internal.api.RachioApiClient;
 import org.openhab.binding.rachio.internal.api.RachioApiException;
 import org.openhab.binding.rachio.internal.api.dto.CustomCrop;
@@ -283,9 +282,50 @@ public class RachioZoneHandler extends RachioHandler {
      * @param zone zone data
      */
     private void updateZonePropertyChannels(RachioZone zone) {
-        // Copy the full implementation from your original file here.
-        // This method can remain largely unchanged as it only deals with the RachioZone DTO object.
-        // Since the URL content cut off, ensure you have the complete method from line 282 onward.
+        CustomSoil soil = zone.getSoil();
+        if (soil != null) {
+            if (soil.getType() != null) {
+                // For string channels, you might need to create a StringType channel
+                // For now, using DecimalType as placeholder
+                updateState(CHANNEL_SOIL_TYPE, new DecimalType(0));
+            }
+            if (soil.getAvailableWater() != null) {
+                updateState(CHANNEL_SOIL_AVAILABLE_WATER, new DecimalType(soil.getAvailableWater()));
+            }
+        }
+
+        CustomCrop crop = zone.getCrop();
+        if (crop != null) {
+            if (crop.getType() != null) {
+                updateState(CHANNEL_CROP_TYPE, new DecimalType(0));
+            }
+            if (crop.getCoefficient() != null) {
+                updateState(CHANNEL_CROP_COEFFICIENT, new DecimalType(crop.getCoefficient()));
+            }
+        }
+
+        CustomNozzle nozzle = zone.getNozzle();
+        if (nozzle != null) {
+            if (nozzle.getType() != null) {
+                updateState(CHANNEL_NOZZLE_TYPE, new DecimalType(0));
+            }
+            if (nozzle.getRate() != null) {
+                updateState(CHANNEL_NOZZLE_RATE, new DecimalType(nozzle.getRate()));
+            }
+        }
+
+        // Additional properties
+        if (zone.getRootDepth() != null) {
+            updateState(CHANNEL_ROOT_DEPTH, new DecimalType(zone.getRootDepth()));
+        }
+
+        if (zone.getEfficiency() != null) {
+            updateState(CHANNEL_IRRIGATION_EFFICIENCY, new DecimalType(zone.getEfficiency()));
+        }
+
+        if (zone.getArea() != null) {
+            updateState(CHANNEL_ZONE_AREA, new DecimalType(zone.getArea()));
+        }
     }
 
     /**
