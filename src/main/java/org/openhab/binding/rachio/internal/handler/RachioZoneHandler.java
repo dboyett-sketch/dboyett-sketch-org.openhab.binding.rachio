@@ -10,6 +10,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.eclipse.jdt.annotation.NonNullByDefault;
 import org.eclipse.jdt.annotation.Nullable;
+import org.openhab.binding.rachio.internal.api.DurationParser;
 import org.openhab.binding.rachio.internal.api.RachioApiClient;
 import org.openhab.binding.rachio.internal.api.RachioApiException;
 import org.openhab.binding.rachio.internal.api.dto.CustomCrop;
@@ -20,6 +21,7 @@ import org.openhab.binding.rachio.internal.config.RachioZoneConfiguration;
 import org.openhab.core.library.types.DecimalType;
 import org.openhab.core.library.types.OnOffType;
 import org.openhab.core.library.types.QuantityType;
+import org.openhab.core.library.types.StringType;
 import org.openhab.core.library.unit.Units;
 import org.openhab.core.thing.ChannelUID;
 import org.openhab.core.thing.Thing;
@@ -51,18 +53,18 @@ public class RachioZoneHandler extends RachioHandler {
         logger.debug("Initializing Rachio zone handler for {}", getThing().getUID());
         config = getConfigAs(RachioZoneConfiguration.class);
         RachioBridgeHandler bridgeHandler = getBridgeHandler();
-        
+
         if (bridgeHandler == null) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "No bridge available");
             return;
         }
-        
+
         this.apiClient = bridgeHandler.getApiClient();
         if (this.apiClient == null) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "Bridge API client not ready");
             return;
         }
-        
+
         updateStatus(ThingStatus.UNKNOWN);
         // Perform initial poll
         scheduler.execute(this::pollStatus);
@@ -88,10 +90,10 @@ public class RachioZoneHandler extends RachioHandler {
             scheduler.execute(this::pollStatus);
             return;
         }
-        
+
         RachioZoneConfiguration localConfig = config;
         RachioApiClient localApiClient = apiClient;
-        
+
         if (localConfig == null || localConfig.getZoneId() == null) {
             logger.warn("Zone configuration not available");
             return;
@@ -100,29 +102,48 @@ public class RachioZoneHandler extends RachioHandler {
             logger.warn("API client not available");
             return;
         }
-        
+
         String channelId = channelUID.getIdWithoutGroup();
         String zoneId = localConfig.getZoneId();
-        
+
         try {
             switch (channelId) {
                 case CHANNEL_ZONE_START:
                     if (command instanceof OnOffType && command == OnOffType.ON) {
                         // Use configured default duration or fallback
-                        Integer duration = localConfig.getDefaultDuration() != null ? 
+                        Integer durationMinutes = (localConfig.getDefaultDuration() != null) ? 
                             localConfig.getDefaultDuration() : DEFAULT_ZONE_DURATION;
-                        localApiClient.startZone(zoneId, duration);
+                        // Call the new method that accepts minutes
+                        localApiClient.startZoneMinutes(zoneId, durationMinutes);
+                        scheduler.execute(this::pollStatus);
+                    } else if (command instanceof QuantityType) {
+                        // Handle QuantityType command - supports minutes or seconds via unit
+                        QuantityType<?> quantity = (QuantityType<?>) command;
+                        if (quantity.getUnit() == Units.SECOND) {
+                            int seconds = quantity.intValue();
+                            localApiClient.startZoneSeconds(zoneId, seconds);
+                        } else {
+                            // Default to minutes if no unit or different unit specified
+                            int minutes = quantity.toUnit(Units.MINUTE).intValue();
+                            localApiClient.startZoneMinutes(zoneId, minutes);
+                        }
+                        scheduler.execute(this::pollStatus);
+                    } else if (command instanceof StringType) {
+                        // Handle string duration like "10m30s" using the new flexible method
+                        String durationStr = ((StringType) command).toString();
+                        localApiClient.startZone(zoneId, durationStr);
                         scheduler.execute(this::pollStatus);
                     }
                     break;
 
                 case CHANNEL_ZONE_STOP:
                     if (command instanceof OnOffType && command == OnOffType.ON) {
-                        // Stop watering typically stops all zones on the device.
-                        // We need the device ID. This highlights a design gap.
-                        // For now, we'll assume a method to stop a specific zone or all watering.
-                        logger.warn("Single zone stop command may require device context. Implementation needed.");
-                        // localApiClient.stopWatering(deviceId); // Would need deviceId
+                        // To stop a specific zone, we need its device context.
+                        // For now, this is a placeholder. You might need to fetch the parent device ID.
+                        logger.warn("Single zone stop command not fully implemented. Requires parent device ID.");
+                        // Example future implementation:
+                        // String deviceId = getParentDeviceId(); // You need to implement this
+                        // localApiClient.stopWatering(deviceId);
                     }
                     break;
 
@@ -138,16 +159,21 @@ public class RachioZoneHandler extends RachioHandler {
                     if (command instanceof DecimalType) {
                         int minutes = ((DecimalType) command).intValue();
                         if (minutes > 0) {
-                            localApiClient.startZone(zoneId, minutes);
+                            localApiClient.startZoneMinutes(zoneId, minutes);
                             scheduler.execute(this::pollStatus);
                         }
                     } else if (command instanceof QuantityType) {
                         QuantityType<?> quantity = (QuantityType<?>) command;
                         int minutes = quantity.toUnit(Units.MINUTE).intValue();
                         if (minutes > 0) {
-                            localApiClient.startZone(zoneId, minutes);
+                            localApiClient.startZoneMinutes(zoneId, minutes);
                             scheduler.execute(this::pollStatus);
                         }
+                    } else if (command instanceof StringType) {
+                        // Also support string format on the duration channel
+                        String durationStr = ((StringType) command).toString();
+                        localApiClient.startZone(zoneId, durationStr);
+                        scheduler.execute(this::pollStatus);
                     }
                     break;
 
@@ -155,7 +181,7 @@ public class RachioZoneHandler extends RachioHandler {
                     if (command instanceof DecimalType) {
                         int seconds = ((DecimalType) command).intValue();
                         if (seconds > 0) {
-                            localApiClient.startZone(zoneId, seconds / 60); // Convert seconds to minutes
+                            localApiClient.startZoneSeconds(zoneId, seconds);
                             scheduler.execute(this::pollStatus);
                         }
                     }
@@ -177,7 +203,7 @@ public class RachioZoneHandler extends RachioHandler {
     protected void pollStatus() {
         RachioZoneConfiguration localConfig = config;
         RachioApiClient localApiClient = apiClient;
-        
+
         if (localConfig == null || localConfig.getZoneId() == null) {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR,
                     "Zone configuration not available");
@@ -187,30 +213,18 @@ public class RachioZoneHandler extends RachioHandler {
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.BRIDGE_OFFLINE, "API client not available");
             return;
         }
-        
-        // CRITICAL ISSUE: The RachioApiClient you created does NOT have a getZone() method.
-        // Zone data is typically fetched as part of a device. You have two options:
-        // 1. Add a getZone() method to RachioApiClient (requires API endpoint).
-        // 2. Fetch the parent device and find the zone within it.
-        // For now, this will fail. We are leaving the logic structure but you must implement it.
-        
+
         try {
-            // TODO: Implement zone fetching logic.
-            // Option 1 (Preferred if API supports): RachioZone zone = localApiClient.getZone(localConfig.getZoneId());
-            // Option 2: RachioDevice device = localApiClient.getDevice(deviceId); then find zone in device.getZones()
-            logger.error("pollStatus() not fully implemented: Zone data fetching logic is missing in ApiClient.");
-            updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Zone polling not implemented");
-            
-            // Placeholder for successful update (remove this block when implemented)
-            // if (zone != null) {
-            //     updateZone(zone);
-            //     updateStatus(ThingStatus.ONLINE);
-            // } else {
-            //     updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Zone not found");
-            // }
-            
-        } catch (Exception e) {
-            logger.error("Error polling zone status", e);
+            // FIXED: Now uses the getZone() method from the patched RachioApiClient
+            RachioZone zone = localApiClient.getZone(localConfig.getZoneId());
+            if (zone != null) {
+                updateZone(zone);
+                updateStatus(ThingStatus.ONLINE);
+            } else {
+                updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.CONFIGURATION_ERROR, "Zone not found via API");
+            }
+        } catch (RachioApiException e) {
+            logger.error("Error polling zone status via API", e);
             updateStatus(ThingStatus.OFFLINE, ThingStatusDetail.COMMUNICATION_ERROR, e.getMessage());
         }
     }
@@ -269,9 +283,9 @@ public class RachioZoneHandler extends RachioHandler {
      * @param zone zone data
      */
     private void updateZonePropertyChannels(RachioZone zone) {
-        // ... (Keep the existing implementation from your original file for updateZonePropertyChannels)
+        // Copy the full implementation from your original file here.
         // This method can remain largely unchanged as it only deals with the RachioZone DTO object.
-        // Ensure you copy the entire method from your original file here.
+        // Since the URL content cut off, ensure you have the complete method from line 282 onward.
     }
 
     /**
