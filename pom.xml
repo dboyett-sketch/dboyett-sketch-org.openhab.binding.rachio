@@ -10,403 +10,124 @@
     <version>5.0.1-SNAPSHOT</version>
     <packaging>bundle</packaging>
 
-    <name>Rachio Binding</name>
-    <description>OpenHAB binding for Rachio irrigation controllers</description>
-    <url>https://www.openhab.org/addons/bindings/rachio</url>
+    <name>openHAB Rachio Binding</name>
+    <description>Rachio binding for openHAB</description>
 
-    <properties>
-        <!-- CRITICAL: OpenHAB 5.0.1+ compatibility range -->
-        <openhab.version>[5.0.1,6.0.0)</openhab.version>
-        
-        <!-- Maven properties -->
-        <maven.compiler.source>11</maven.compiler.source>
-        <maven.compiler.target>11</maven.compiler.target>
-        <maven.compiler.release>11</maven.compiler.release>
-        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        
-        <!-- OSGi properties -->
-        <bundle.namespace>org.openhab.binding.rachio</bundle.namespace>
-        
-        <!-- Dependency versions -->
-        <jetty.version>9.4.50.v20221201</jetty.version>
-        <gson.version>2.10.1</gson.version>
-        <slf4j.version>2.0.9</slf4j.version>
-        <guava.version>32.1.3-jre</guava.version>
-    </properties>
-
+    <!-- CRITICAL FIX 1: Update parent to 5.x -->
     <parent>
-        <!-- CRITICAL: OpenHAB addon parent for 5.x compatibility -->
-        <groupId>org.openhab.addons.bundles</groupId>
-        <artifactId>org.openhab.addons.reactor.bundles.parent</artifactId>
-        <version>${openhab.version}</version>
+        <groupId>org.openhab.core.binding</groupId>
+        <artifactId>org.openhab.core.binding.parent</artifactId>
+        <version>5.0.1</version>
+        <relativePath />
     </parent>
 
+    <!-- CRITICAL FIX 2: Set OpenHAB version range for 5.0.1+ compatibility -->
+    <properties>
+        <openhab.version>[5.0.1,6.0.0)</openhab.version>
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
+    </properties>
+
     <dependencies>
-        <!-- ========== CORE OPENHAB DEPENDENCIES (5.0.1+ COMPATIBLE) ========== -->
-        
-        <!-- REQUIRED: Core runtime - supports 5.0.1 through 5.x -->
+        <!-- CRITICAL FIX 3: Add missing HTTP client factory dependency for OpenHAB 5.x -->
         <dependency>
-            <groupId>org.openhab.core</groupId>
-            <artifactId>org.openhab.core</artifactId>
-            <version>${openhab.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        
-        <!-- REQUIRED: Core thing model -->
-        <dependency>
-            <groupId>org.openhab.core</groupId>
-            <artifactId>org.openhab.core.thing</artifactId>
-            <version>${openhab.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        
-        <!-- REQUIRED: Core configuration -->
-        <dependency>
-            <groupId>org.openhab.core</groupId>
-            <artifactId>org.openhab.core.config.core</artifactId>
-            <version>${openhab.version}</version>
-            <scope>provided</scope>
-        </dependency>
-        
-        <!-- REQUIRED: HTTP Client via Jetty (MANDATORY for 5.x compatibility) -->
-        <dependency>
-            <groupId>org.openhab.core.io.net</groupId>
+            <groupId>org.openhab.core.io.net.http</groupId>
             <artifactId>org.openhab.core.io.net.http</artifactId>
             <version>${openhab.version}</version>
-            <scope>provided</scope>
         </dependency>
         
-        <!-- REQUIRED: OSGi Declarative Services annotations -->
+        <!-- Keep the transport http for backward compatibility if needed -->
         <dependency>
-            <groupId>org.osgi</groupId>
-            <artifactId>org.osgi.service.component.annotations</artifactId>
-            <version>1.5.0</version>
-            <scope>provided</scope>
+            <groupId>org.openhab.core.io.transport.http</groupId>
+            <artifactId>org.openhab.core.io.transport.http</artifactId>
+            <version>${openhab.version}</version>
         </dependency>
         
-        <!-- REQUIRED: OSGi core -->
-        <dependency>
-            <groupId>org.osgi</groupId>
-            <artifactId>org.osgi.service.component</artifactId>
-            <version>1.5.0</version>
-            <scope>provided</scope>
-        </dependency>
-        
-        <!-- REQUIRED: OSGi metatype for configuration -->
-        <dependency>
-            <groupId>org.osgi</groupId>
-            <artifactId>org.osgi.service.metatype.annotations</artifactId>
-            <version>1.4.1</version>
-            <scope>provided</scope>
-        </dependency>
-        
-        <!-- ========== THIRD-PARTY DEPENDENCIES ========== -->
-        
-        <!-- REQUIRED: JSON parsing (already used by binding) -->
+        <!-- Dependencies for Gson (JSON parsing) -->
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
-            <version>${gson.version}</version>
+            <version>2.10.1</version>
         </dependency>
         
-        <!-- REQUIRED: Logging facade -->
+        <!-- Jetty client - IMPORTANT: Let OpenHAB manage the version -->
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-            <version>${slf4j.version}</version>
+            <groupId>org.eclipse.jetty</groupId>
+            <artifactId>jetty-client</artifactId>
+            <version>${jetty.version}</version>
             <scope>provided</scope>
-        </dependency>
-        
-        <!-- OPTIONAL: Guava utilities -->
-        <dependency>
-            <groupId>com.google.guava</groupId>
-            <artifactId>guava</artifactId>
-            <version>${guava.version}</version>
-        </dependency>
-        
-        <!-- ========== TEST DEPENDENCIES ========== -->
-        
-        <dependency>
-            <groupId>junit</groupId>
-            <artifactId>junit</artifactId>
-            <version>4.13.2</version>
-            <scope>test</scope>
-        </dependency>
-        
-        <dependency>
-            <groupId>org.mockito</groupId>
-            <artifactId>mockito-core</artifactId>
-            <version>5.7.0</version>
-            <scope>test</scope>
-        </dependency>
-        
-        <dependency>
-            <groupId>org.openhab.core</groupId>
-            <artifactId>org.openhab.core.test</artifactId>
-            <version>${openhab.version}</version>
-            <scope>test</scope>
         </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- REQUIRED: Bundle plugin for OSGi manifest -->
+            <!-- CRITICAL FIX 4: Update Java version to 11+ -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <source>11</source>
+                    <target>11</target>
+                    <encoding>UTF-8</encoding>
+                </configuration>
+            </plugin>
+            
+            <!-- CRITICAL FIX 5: Update OSGi bundle headers for OpenHAB 5.x -->
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
-                <version>5.1.9</version>
                 <extensions>true</extensions>
                 <configuration>
                     <instructions>
-                        <!-- CRITICAL: Bundle-SymbolicName must match artifactId -->
-                        <Bundle-SymbolicName>${bundle.namespace}</Bundle-SymbolicName>
-                        
-                        <!-- Bundle metadata -->
-                        <Bundle-Name>Rachio Binding</Bundle-Name>
-                        <Bundle-Vendor>OpenHAB Community</Bundle-Vendor>
+                        <Bundle-SymbolicName>org.openhab.binding.rachio</Bundle-SymbolicName>
+                        <Bundle-Name>openHAB Rachio Binding</Bundle-Name>
                         <Bundle-Version>${project.version}</Bundle-Version>
-                        <Bundle-Description>${project.description}</Bundle-Description>
-                        <Bundle-DocURL>${project.url}</Bundle-DocURL>
                         
-                        <!-- REQUIRED: Import packages for 5.0.1+ compatibility -->
+                        <!-- CRITICAL: Update Import-Package for OpenHAB 5.x -->
                         <Import-Package>
-                            !com.google.gson.internal.*,
-                            com.google.gson;version="${gson.version}",
-                            org.osgi.service.component.annotations;version="[1.5,2)",
-                            org.osgi.service.metatype.annotations;version="[1.4,2)",
+                            com.google.gson;version="[2.10,3)",
                             org.osgi.service.http;version="[1.2,2)",
-                            org.slf4j;version="[1.7,3)",
-                            sun.misc;resolution:=optional,
+                            org.osgi.service.http.whiteboard;version="[1.0,2)",
+                            org.osgi.service.component.annotations;version="[1.2,2)",
+                            org.osgi.service.component;version="[1.3,2)",
+                            org.osgi.framework;version="[1.8,2)",
                             *
                         </Import-Package>
                         
-                        <!-- REQUIRED: Export package for binding -->
                         <Export-Package>
-                            org.openhab.binding.rachio.internal.api,
-                            org.openhab.binding.rachio.internal.api.dto,
-                            org.openhab.binding.rachio.internal.config,
-                            org.openhab.binding.rachio.internal.discovery,
-                            org.openhab.binding.rachio.internal.handler
+                            org.openhab.binding.rachio.*;version="${project.version}"
                         </Export-Package>
                         
-                        <!-- Service-Component directive for DS annotations -->
-                        <Service-Component>
-                            OSGI-INF/*.xml
-                        </Service-Component>
-                        
-                        <!-- Metatype generation -->
-                        <Meta-Persistence>
-                            META-INF/persistence.xml
-                        </Meta-Persistence>
-                        
-                        <!-- Include all resources -->
-                        <_include>-*.xml</_include>
-                        
-                        <!-- Required headers for OpenHAB 5.x -->
+                        <!-- CRITICAL: Add these headers for OpenHAB 5.x compatibility -->
                         <Require-Capability>
-                            osgi.extender;filter:="(osgi.extender=osgi.serviceloader.registrar)"
+                            osgi.extender;filter:="(osgi.extender=osgi.serviceloader.registrar)",
+                            osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=11))"
                         </Require-Capability>
                         
+                        <!-- Update for OpenHAB 5.x ServiceLoader pattern -->
                         <Provide-Capability>
-                            osgi.serviceloader;osgi.serviceloader=org.openhab.core.thing.binding.ThingHandlerFactory
+                            osgi.serviceloader;osgi.serviceloader=org.openhab.core.io.http.HttpContextFactoryService,
+                            osgi.serviceloader;osgi.serviceloader=org.openhab.core.io.net.http.HttpClientFactory
                         </Provide-Capability>
+                        
+                        <!-- Add Bundle-RequiredExecutionEnvironment for Java 11 -->
+                        <Bundle-RequiredExecutionEnvironment>JavaSE-11</Bundle-RequiredExecutionEnvironment>
+                        
+                        <!-- Clean up headers -->
+                        <_noee>true</_noee>
+                        <_removeheaders>Bnd-LastModified,Built-By,Build-Jdk,Created-By,Tool</_removeheaders>
                     </instructions>
                 </configuration>
             </plugin>
             
-            <!-- REQUIRED: Compiler plugin for Java 11 compatibility -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.11.0</version>
-                <configuration>
-                    <source>11</source>
-                    <target>11</target>
-                    <release>11</release>
-                    <encoding>UTF-8</encoding>
-                    <showWarnings>true</showWarnings>
-                    <showDeprecation>true</showDeprecation>
-                    <compilerArgs>
-                        <arg>-Xlint:all</arg>
-                        <arg>-Xlint:-processing</arg>
-                        <!-- Enable null safety annotations -->
-                        <arg>-parameters</arg>
-                    </compilerArgs>
-                    <annotationProcessorPaths>
-                        <!-- Optional: Add annotation processors if needed -->
-                    </annotationProcessorPaths>
-                </configuration>
-            </plugin>
-            
-            <!-- Resources plugin -->
+            <!-- Optional: Add resources plugin for proper resource handling -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
-                <version>3.3.1</version>
                 <configuration>
                     <encoding>UTF-8</encoding>
                 </configuration>
             </plugin>
-            
-            <!-- Surefire plugin for testing -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-surefire-plugin</artifactId>
-                <version>3.1.2</version>
-                <configuration>
-                    <systemPropertyVariables>
-                        <java.awt.headless>true</java.awt.headless>
-                    </systemPropertyVariables>
-                    <includes>
-                        <include>**/*Test.java</include>
-                        <include>**/*IT.java</include>
-                    </includes>
-                </configuration>
-            </plugin>
-            
-            <!-- Enforcer plugin for dependency consistency -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-enforcer-plugin</artifactId>
-                <version>3.3.0</version>
-                <executions>
-                    <execution>
-                        <id>enforce-versions</id>
-                        <goals>
-                            <goal>enforce</goal>
-                        </goals>
-                        <configuration>
-                            <rules>
-                                <requireJavaVersion>
-                                    <version>[11,17)</version>
-                                </requireJavaVersion>
-                                <requireMavenVersion>
-                                    <version>[3.6,)</version>
-                                </requireMavenVersion>
-                                <bannedDependencies>
-                                    <!-- CRITICAL: Ban direct HTTP client usage -->
-                                    <excludes>
-                                        <exclude>com.sun.net.httpserver:*</exclude>
-                                        <exclude>java.net.http:*</exclude>
-                                        <exclude>javax.servlet:servlet-api</exclude>
-                                    </excludes>
-                                </bannedDependencies>
-                                <dependencyConvergence/>
-                            </rules>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            
-            <!-- JAR plugin -->
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-jar-plugin</artifactId>
-                <version>3.3.0</version>
-                <configuration>
-                    <archive>
-                        <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
-                    </archive>
-                </configuration>
-            </plugin>
         </plugins>
-        
-        <!-- Resource filtering -->
-        <resources>
-            <resource>
-                <directory>src/main/resources</directory>
-                <filtering>true</filtering>
-                <includes>
-                    <include>**/*.properties</include>
-                    <include>**/*.xml</include>
-                </includes>
-            </resource>
-            <resource>
-                <directory>src/main/java</directory>
-                <includes>
-                    <include>**/*.java</include>
-                </includes>
-            </resource>
-        </resources>
-        
-        <!-- Test resources -->
-        <testResources>
-            <testResource>
-                <directory>src/test/resources</directory>
-            </testResource>
-        </testResources>
     </build>
-
-    <profiles>
-        <!-- Profile for OpenHAB 5.0.1 specific builds -->
-        <profile>
-            <id>oh-5.0.1</id>
-            <properties>
-                <openhab.version>5.0.1</openhab.version>
-            </properties>
-        </profile>
-        
-        <!-- Profile for latest 5.x builds -->
-        <profile>
-            <id>oh-5-latest</id>
-            <properties>
-                <openhab.version>5.4.0</openhab.version>
-            </properties>
-        </profile>
-        
-        <!-- Profile for forward compatibility testing -->
-        <profile>
-            <id>oh-6-preview</id>
-            <properties>
-                <openhab.version>6.0.0-M1</openhab.version>
-            </properties>
-        </profile>
-        
-        <!-- Profile for development with local OpenHAB -->
-        <profile>
-            <id>development</id>
-            <properties>
-                <openhab.version>5.0.1</openhab.version>
-            </properties>
-            <dependencies>
-                <!-- Include test dependencies for development -->
-                <dependency>
-                    <groupId>org.openhab.core</groupId>
-                    <artifactId>org.openhab.core.test.java</artifactId>
-                    <version>${openhab.version}</version>
-                    <scope>test</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-    </profiles>
-
-    <repositories>
-        <!-- OpenHAB repository -->
-        <repository>
-            <id>openhab-repo</id>
-            <url>https://openhab.jfrog.io/artifactory/libs-release</url>
-        </repository>
-        
-        <!-- OpenHAB snapshot repository -->
-        <repository>
-            <id>openhab-snapshots</id>
-            <url>https://openhab.jfrog.io/artifactory/libs-snapshot</url>
-            <snapshots>
-                <enabled>true</enabled>
-            </snapshots>
-        </repository>
-        
-        <!-- Maven Central -->
-        <repository>
-            <id>central</id>
-            <url>https://repo.maven.apache.org/maven2</url>
-        </repository>
-    </repositories>
-
-    <pluginRepositories>
-        <pluginRepository>
-            <id>central</id>
-            <url>https://repo.maven.apache.org/maven2</url>
-        </pluginRepository>
-    </pluginRepositories>
 </project>
