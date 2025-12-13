@@ -1,154 +1,112 @@
 package org.openhab.binding.rachio.internal.api;
 
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.net.URI;
-import java.time.Duration;
-import java.util.concurrent.atomic.AtomicInteger;
+import org.eclipse.jetty.client.HttpClient;
+import org.eclipse.jetty.client.api.ContentResponse;
+import org.eclipse.jetty.client.api.Request;
+import org.eclipse.jetty.client.util.StringContentProvider;
+import org.eclipse.jetty.http.HttpMethod;
+import org.openhab.binding.rachio.internal.api.exception.RachioApiException;
+import org.openhab.core.io.net.http.HttpClientFactory;
+import org.osgi.service.component.annotations.Component;
+import org.osgi.service.component.annotations.Reference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * Modern HTTP client for Rachio API with rate limiting, retries, and connection pooling
- */
+import java.nio.charset.StandardCharsets;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+
+@Component(service = RachioHttpClient.class)
 public class RachioHttpClient {
     private final Logger logger = LoggerFactory.getLogger(RachioHttpClient.class);
     
-    private final HttpClient client;
-    private final String apiKey;
-    private final AtomicInteger remainingRequests = new AtomicInteger(60); // Rachio rate limit
-    private final Object rateLimitLock = new Object();
+    private HttpClient httpClient;
     
-    // Singleton instance for connection pooling
-    private static HttpClient sharedClient;
-    
-    public RachioHttpClient(String apiKey) {
-        this.apiKey = apiKey;
-        this.client = getOrCreateSharedClient();
+    @Reference
+    public void setHttpClientFactory(HttpClientFactory httpClientFactory) {
+        // CRITICAL: Use OpenHAB's shared HttpClient via factory
+        this.httpClient = httpClientFactory.getCommonHttpClient();
+        logger.debug("HttpClientFactory initialized for Rachio binding");
     }
     
-    private static synchronized HttpClient getOrCreateSharedClient() {
-        if (sharedClient == null) {
-            sharedClient = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .followRedirects(HttpClient.Redirect.NORMAL)
-                .version(HttpClient.Version.HTTP_2)  // HTTP/2 for better performance
-                .build();
+    public void unsetHttpClientFactory(HttpClientFactory httpClientFactory) {
+        this.httpClient = null;
+    }
+    
+    /**
+     * Execute HTTP request to Rachio API
+     */
+    public String executeRequest(String url, String method, String apiKey, 
+                                 String body, String contentType) throws RachioApiException {
+        if (httpClient == null) {
+            throw new RachioApiException("HttpClient not initialized - binding not ready");
         }
-        return sharedClient;
-    }
-    
-    public String executeRequest(HttpRequest.Builder requestBuilder) throws RachioApiException {
-        return executeRequest(requestBuilder, 0);
-    }
-    
-    private String executeRequest(HttpRequest.Builder requestBuilder, int retryCount) 
-            throws RachioApiException {
-        
-        // Wait if rate limit is exceeded
-        waitForRateLimit();
-        
-        // Add common headers
-        requestBuilder
-            .header("Authorization", "Bearer " + apiKey)
-            .header("Content-Type", "application/json")
-            .header("User-Agent", "OpenHAB-Rachio-Binding/5.0")
-            .timeout(Duration.ofSeconds(15));
-        
-        HttpRequest request = requestBuilder.build();
         
         try {
-            HttpResponse<String> response = client.send(request, 
-                HttpResponse.BodyHandlers.ofString());
+            // Convert method string to HttpMethod
+            HttpMethod httpMethod = HttpMethod.fromString(method);
             
-            // Update rate limit from headers
-            updateRateLimit(response.headers());
+            // Build request with proper headers
+            Request request = httpClient.newRequest(url)
+                .method(httpMethod)
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Accept", "application/json")
+                .timeout(15, TimeUnit.SECONDS)
+                .idleTimeout(30, TimeUnit.SECONDS);
             
-            int statusCode = response.statusCode();
+            // Add body if present
+            if (body != null && !body.isEmpty()) {
+                request.header("Content-Type", contentType != null ? contentType : "application/json")
+                       .content(new StringContentProvider(body, StandardCharsets.UTF_8));
+            }
             
-            if (statusCode >= 200 && statusCode < 300) {
-                return response.body();
-            } else if (shouldRetry(statusCode) && retryCount < 3) {
-                logger.debug("Request failed with status {}, retrying... (attempt {})", 
-                    statusCode, retryCount + 1);
-                Thread.sleep(calculateBackoff(retryCount));
-                return executeRequest(requestBuilder, retryCount + 1);
+            // Execute request
+            ContentResponse response = request.send();
+            int status = response.getStatus();
+            
+            if (status >= 200 && status < 300) {
+                String responseBody = response.getContentAsString();
+                logger.trace("HTTP {} {} -> {}: {}", method, url, status, responseBody);
+                return responseBody;
             } else {
-                throw new RachioApiException("HTTP " + statusCode + ": " + 
-                    response.body(), statusCode);
+                String errorBody = response.getContentAsString();
+                logger.warn("HTTP {} {} -> {}: {}", method, url, status, errorBody);
+                throw new RachioApiException("HTTP " + status + ": " + errorBody);
             }
-            
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new RachioApiException("Request interrupted", e);
+        } catch (TimeoutException e) {
+            logger.warn("Request timeout for {} {}", method, url, e);
+            throw new RachioApiException("Request timeout after 15 seconds", e);
         } catch (Exception e) {
-            throw new RachioApiException("HTTP request failed", e);
+            logger.error("HTTP request failed for {} {}", method, url, e);
+            throw new RachioApiException("HTTP request failed: " + e.getMessage(), e);
         }
     }
     
-    private void waitForRateLimit() {
-        synchronized (rateLimitLock) {
-            while (remainingRequests.get() <= 0) {
-                try {
-                    // Rachio: 60 requests per minute
-                    logger.debug("Rate limit reached, waiting 60 seconds...");
-                    rateLimitLock.wait(60000); // Wait 60 seconds
-                    remainingRequests.set(60); // Reset counter
-                } catch (InterruptedException e) {
-                    Thread.currentThread().interrupt();
-                    break;
-                }
-            }
-            remainingRequests.decrementAndGet();
-        }
+    /**
+     * Convenience method for GET requests
+     */
+    public String get(String url, String apiKey) throws RachioApiException {
+        return executeRequest(url, "GET", apiKey, null, null);
     }
     
-    private void updateRateLimit(java.net.http.HttpHeaders headers) {
-        headers.firstValue("X-RateLimit-Remaining").ifPresent(value -> {
-            try {
-                int remaining = Integer.parseInt(value);
-                synchronized (rateLimitLock) {
-                    remainingRequests.set(Math.min(remaining, remainingRequests.get()));
-                }
-            } catch (NumberFormatException e) {
-                logger.debug("Could not parse rate limit header: {}", value);
-            }
-        });
+    /**
+     * Convenience method for POST requests with JSON
+     */
+    public String post(String url, String apiKey, String jsonBody) throws RachioApiException {
+        return executeRequest(url, "POST", apiKey, jsonBody, "application/json");
     }
     
-    private boolean shouldRetry(int statusCode) {
-        // Retry on server errors (5xx) and rate limits (429)
-        return statusCode == 429 || statusCode >= 500;
+    /**
+     * Convenience method for PUT requests
+     */
+    public String put(String url, String apiKey, String jsonBody) throws RachioApiException {
+        return executeRequest(url, "PUT", apiKey, jsonBody, "application/json");
     }
     
-    private long calculateBackoff(int retryCount) {
-        // Exponential backoff with jitter: 1s, 2s, 4s...
-        long baseDelay = 1000L * (1L << retryCount); // 2^retryCount seconds
-        long jitter = (long) (Math.random() * 1000); // Add up to 1s jitter
-        return baseDelay + jitter;
-    }
-    
-    // Convenience methods
-    public String get(String url) throws RachioApiException {
-        return executeRequest(HttpRequest.newBuilder().uri(URI.create(url)).GET());
-    }
-    
-    public String post(String url, String body) throws RachioApiException {
-        return executeRequest(HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .POST(HttpRequest.BodyPublishers.ofString(body)));
-    }
-    
-    public String put(String url, String body) throws RachioApiException {
-        return executeRequest(HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .PUT(HttpRequest.BodyPublishers.ofString(body)));
-    }
-    
-    public void delete(String url) throws RachioApiException {
-        executeRequest(HttpRequest.newBuilder()
-            .uri(URI.create(url))
-            .DELETE());
+    /**
+     * Convenience method for DELETE requests
+     */
+    public String delete(String url, String apiKey) throws RachioApiException {
+        return executeRequest(url, "DELETE", apiKey, null, null);
     }
 }
