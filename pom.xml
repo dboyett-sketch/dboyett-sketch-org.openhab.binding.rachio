@@ -13,7 +13,7 @@
     <name>openHAB Rachio Binding</name>
     <description>Rachio binding for openHAB</description>
 
-    <!-- CRITICAL FIX 1: Update parent to 5.x -->
+    <!-- CRITICAL FIX 1: Update parent to 5.x (ALREADY CORRECT) -->
     <parent>
         <groupId>org.openhab.core.binding</groupId>
         <artifactId>org.openhab.core.binding.parent</artifactId>
@@ -21,35 +21,53 @@
         <relativePath />
     </parent>
 
-    <!-- CRITICAL FIX 2: Set OpenHAB version range for 5.0.1+ compatibility -->
+    <!-- CHANGED: Added missing properties for consistent builds -->
     <properties>
         <openhab.version>[5.0.1,6.0.0)</openhab.version>
+        <!-- ADDED: Use 'release' property for modern Java compilation -->
+        <maven.compiler.release>11</maven.compiler.release>
         <maven.compiler.source>11</maven.compiler.source>
         <maven.compiler.target>11</maven.compiler.target>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <!-- ADDED: Define Jetty version aligned with OpenHAB 5.x -->
+        <jetty.version>9.4.51.v20230217</jetty.version>
     </properties>
 
     <dependencies>
-        <!-- CRITICAL FIX 3: Add missing HTTP client factory dependency for OpenHAB 5.x -->
+        <!-- CRITICAL FIX 3: Add missing HTTP client factory dependency (ALREADY CORRECT) -->
         <dependency>
             <groupId>org.openhab.core.io.net.http</groupId>
             <artifactId>org.openhab.core.io.net.http</artifactId>
             <version>${openhab.version}</version>
+            <scope>provided</scope> <!-- ADDED: Should be provided -->
         </dependency>
-        
-        <!-- Keep the transport http for backward compatibility if needed -->
+
+        <!-- REMOVED: org.openhab.core.io.transport.http is deprecated in 5.x -->
+        <!-- Use only org.openhab.core.io.net.http -->
+
+        <!-- CHANGED: Added required OpenHAB core dependencies -->
         <dependency>
-            <groupId>org.openhab.core.io.transport.http</groupId>
-            <artifactId>org.openhab.core.io.transport.http</artifactId>
+            <groupId>org.openhab.core</groupId>
+            <artifactId>org.openhab.core</artifactId>
             <version>${openhab.version}</version>
+            <scope>provided</scope>
         </dependency>
-        
+
+        <dependency>
+            <groupId>org.openhab.core</groupId>
+            <artifactId>org.openhab.core.thing</artifactId>
+            <version>${openhab.version}</version>
+            <scope>provided</scope>
+        </dependency>
+
         <!-- Dependencies for Gson (JSON parsing) -->
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>2.10.1</version>
         </dependency>
-        
+
         <!-- Jetty client - IMPORTANT: Let OpenHAB manage the version -->
         <dependency>
             <groupId>org.eclipse.jetty</groupId>
@@ -57,73 +75,104 @@
             <version>${jetty.version}</version>
             <scope>provided</scope>
         </dependency>
+
+        <!-- ADDED: OSGi annotations for component declaration -->
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.component.annotations</artifactId>
+            <version>1.5.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.http.whiteboard</artifactId>
+            <version>1.0.0</version>
+            <scope>provided</scope>
+        </dependency>
+
+        <!-- ADDED: Servlet API for webhook servlet -->
+        <dependency>
+            <groupId>javax.servlet</groupId>
+            <artifactId>javax.servlet-api</artifactId>
+            <version>3.1.0</version>
+            <scope>provided</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
-            <!-- CRITICAL FIX 4: Update Java version to 11+ -->
+            <!-- CRITICAL FIX 4: Update Java version to 11+ (ENHANCED) -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version> <!-- ADDED: Explicit version -->
                 <configuration>
+                    <!-- ADDED: Use release property for modern cross-compilation -->
+                    <release>11</release>
                     <source>11</source>
                     <target>11</target>
                     <encoding>UTF-8</encoding>
+                    <!-- ADDED: Show warnings for deprecated API usage -->
+                    <showWarnings>true</showWarnings>
+                    <showDeprecation>true</showDeprecation>
                 </configuration>
             </plugin>
-            
-            <!-- CRITICAL FIX 5: Update OSGi bundle headers for OpenHAB 5.x -->
+
+            <!-- CRITICAL FIX 5: Update OSGi bundle headers (CORRECTED) -->
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
+                <version>5.1.8</version> <!-- ADDED: Explicit version -->
                 <extensions>true</extensions>
                 <configuration>
                     <instructions>
                         <Bundle-SymbolicName>org.openhab.binding.rachio</Bundle-SymbolicName>
                         <Bundle-Name>openHAB Rachio Binding</Bundle-Name>
                         <Bundle-Version>${project.version}</Bundle-Version>
-                        
-                        <!-- CRITICAL: Update Import-Package for OpenHAB 5.x -->
+
+                        <!-- CHANGED: Simplified and corrected Import-Package -->
                         <Import-Package>
+                            !org.junit,!org.mockito.*,
+                            javax.servlet.*;version="[3.1,4)",
+                            org.eclipse.jetty.client.*;version="[9.4,10)",
+                            org.eclipse.jetty.http.*;version="[9.4,10)",
                             com.google.gson;version="[2.10,3)",
-                            org.osgi.service.http;version="[1.2,2)",
                             org.osgi.service.http.whiteboard;version="[1.0,2)",
                             org.osgi.service.component.annotations;version="[1.2,2)",
                             org.osgi.service.component;version="[1.3,2)",
-                            org.osgi.framework;version="[1.8,2)",
                             *
                         </Import-Package>
-                        
+
                         <Export-Package>
                             org.openhab.binding.rachio.*;version="${project.version}"
                         </Export-Package>
-                        
-                        <!-- CRITICAL: Add these headers for OpenHAB 5.x compatibility -->
-                        <Require-Capability>
-                            osgi.extender;filter:="(osgi.extender=osgi.serviceloader.registrar)",
-                            osgi.ee;filter:="(&(osgi.ee=JavaSE)(version=11))"
-                        </Require-Capability>
-                        
-                        <!-- Update for OpenHAB 5.x ServiceLoader pattern -->
-                        <Provide-Capability>
-                            osgi.serviceloader;osgi.serviceloader=org.openhab.core.io.http.HttpContextFactoryService,
-                            osgi.serviceloader;osgi.serviceloader=org.openhab.core.io.net.http.HttpClientFactory
-                        </Provide-Capability>
-                        
-                        <!-- Add Bundle-RequiredExecutionEnvironment for Java 11 -->
+
+                        <!-- REMOVED: Incorrect ServiceLoader declarations -->
+                        <!-- OpenHAB 5.x uses @Component annotations, not ServiceLoader -->
+
+                        <!-- ADDED: Service-Component for DS annotations -->
+                        <Service-Component>OSGI-INF/*.xml</Service-Component>
+
+                        <!-- ADDED: Enable DS and Metatype annotations processing -->
+                        <_dsannotations>*</_dsannotations>
+                        <_metatypeannotations>*</_metatypeannotations>
+
+                        <!-- CORRECTED: Proper execution environment -->
                         <Bundle-RequiredExecutionEnvironment>JavaSE-11</Bundle-RequiredExecutionEnvironment>
-                        
-                        <!-- Clean up headers -->
+
+                        <!-- Keep clean up headers -->
                         <_noee>true</_noee>
                         <_removeheaders>Bnd-LastModified,Built-By,Build-Jdk,Created-By,Tool</_removeheaders>
                     </instructions>
                 </configuration>
             </plugin>
-            
-            <!-- Optional: Add resources plugin for proper resource handling -->
+
+            <!-- ADDED: Maven resources plugin with proper configuration -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
                 <configuration>
                     <encoding>UTF-8</encoding>
                 </configuration>
