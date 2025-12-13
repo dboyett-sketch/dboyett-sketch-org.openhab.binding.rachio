@@ -1,124 +1,142 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0"
-    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-    xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
+         http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <modelVersion>4.0.0</modelVersion>
 
-    <!-- ========== BINDING METADATA ========== -->
-    <groupId>org.openhab.binding.rachio</groupId>
+    <groupId>org.openhab.binding</groupId>
     <artifactId>org.openhab.binding.rachio</artifactId>
-    <version>5.0.0-SNAPSHOT</version>  <!-- Binding version independent of OpenHAB -->
+    <version>5.0.1-SNAPSHOT</version>
     <packaging>bundle</packaging>
-    <name>openHAB Rachio Binding</name>
-    <description>openHAB Binding for the Rachio Smart Sprinkler Controller</description>
-    <url>https://github.com/dboyett-sketch/org.openhab.binding.rachio</url>
 
-    <!-- ========== DEFAULT PROFILE PROPERTIES ========== -->
+    <name>Rachio Binding</name>
+    <description>OpenHAB binding for Rachio irrigation controllers</description>
+    <url>https://www.openhab.org/addons/bindings/rachio</url>
+
     <properties>
-        <!-- Default: OpenHAB 5.0.1 (local testing) -->
-        <openhab.version>5.0.1</openhab.version>
-        <openhab.parent.version>5.0.0</openhab.parent.version>
+        <!-- CRITICAL: OpenHAB 5.0.1+ compatibility range -->
+        <openhab.version>[5.0.1,6.0.0)</openhab.version>
         
-        <!-- Plugin versions -->
-        <spotless.version>2.17.1</spotless.version>
-        <spotbugs.version>4.2.2</spotbugs.version>
-        <maven-bundle-plugin.version>5.1.9</maven-bundle-plugin.version>
-        
-        <!-- Dependency versions -->
-        <jackson.version>2.16.0</jackson.version>
-        <jakarta.servlet.version>6.0.0</jakarta.servlet.version>
-        <gson.version>2.10.1</gson.version>
-        
-        <!-- Build settings -->
+        <!-- Maven properties -->
+        <maven.compiler.source>11</maven.compiler.source>
+        <maven.compiler.target>11</maven.compiler.target>
         <maven.compiler.release>11</maven.compiler.release>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        
+        <!-- OSGi properties -->
+        <bundle.namespace>org.openhab.binding.rachio</bundle.namespace>
+        
+        <!-- Dependency versions -->
+        <jetty.version>9.4.50.v20221201</jetty.version>
+        <gson.version>2.10.1</gson.version>
+        <slf4j.version>2.0.9</slf4j.version>
+        <guava.version>32.1.3-jre</guava.version>
     </properties>
 
-    <!-- ========== PARENT POM (Version controlled by profile) ========== -->
     <parent>
+        <!-- CRITICAL: OpenHAB addon parent for 5.x compatibility -->
         <groupId>org.openhab.addons.bundles</groupId>
-        <artifactId>org.openhab.addons.reactor.bundles</artifactId>
-        <version>${openhab.parent.version}</version>
-        <relativePath />
+        <artifactId>org.openhab.addons.reactor.bundles.parent</artifactId>
+        <version>${openhab.version}</version>
     </parent>
 
-    <!-- ========== DEPENDENCIES ========== -->
     <dependencies>
-        <!-- ========== OPENHAB CORE DEPENDENCIES (Version controlled by profile) ========== -->
+        <!-- ========== CORE OPENHAB DEPENDENCIES (5.0.1+ COMPATIBLE) ========== -->
+        
+        <!-- REQUIRED: Core runtime - supports 5.0.1 through 5.x -->
         <dependency>
             <groupId>org.openhab.core</groupId>
-            <artifactId>org.openhab.core.io.rest.core</artifactId>
+            <artifactId>org.openhab.core</artifactId>
             <version>${openhab.version}</version>
+            <scope>provided</scope>
         </dependency>
         
-        <dependency>
-            <groupId>org.openhab.core</groupId>
-            <artifactId>org.openhab.core.io.net</artifactId>
-            <version>${openhab.version}</version>
-        </dependency>
-        
-        <dependency>
-            <groupId>org.openhab.core</groupId>
-            <artifactId>org.openhab.core.config.core</artifactId>
-            <version>${openhab.version}</version>
-        </dependency>
-        
+        <!-- REQUIRED: Core thing model -->
         <dependency>
             <groupId>org.openhab.core</groupId>
             <artifactId>org.openhab.core.thing</artifactId>
             <version>${openhab.version}</version>
-        </dependency>
-        
-        <dependency>
-            <groupId>org.openhab.core</groupId>
-            <artifactId>org.openhab.core.library</artifactId>
-            <version>${openhab.version}</version>
-        </dependency>
-
-        <!-- ========== SERVLET API ========== -->
-        <dependency>
-            <groupId>jakarta.servlet</groupId>
-            <artifactId>jakarta.servlet-api</artifactId>
-            <version>${jakarta.servlet.version}</version>
             <scope>provided</scope>
         </dependency>
         
-        <!-- ========== JACKSON FOR JSON PROCESSING ========== -->
+        <!-- REQUIRED: Core configuration -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
-            <version>${jackson.version}</version>
+            <groupId>org.openhab.core</groupId>
+            <artifactId>org.openhab.core.config.core</artifactId>
+            <version>${openhab.version}</version>
+            <scope>provided</scope>
         </dependency>
         
+        <!-- REQUIRED: HTTP Client via Jetty (MANDATORY for 5.x compatibility) -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-core</artifactId>
-            <version>${jackson.version}</version>
+            <groupId>org.openhab.core.io.net</groupId>
+            <artifactId>org.openhab.core.io.net.http</artifactId>
+            <version>${openhab.version}</version>
+            <scope>provided</scope>
         </dependency>
         
+        <!-- REQUIRED: OSGi Declarative Services annotations -->
         <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-annotations</artifactId>
-            <version>${jackson.version}</version>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.component.annotations</artifactId>
+            <version>1.5.0</version>
+            <scope>provided</scope>
         </dependency>
         
-        <!-- ========== GSON ========== -->
+        <!-- REQUIRED: OSGi core -->
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.component</artifactId>
+            <version>1.5.0</version>
+            <scope>provided</scope>
+        </dependency>
+        
+        <!-- REQUIRED: OSGi metatype for configuration -->
+        <dependency>
+            <groupId>org.osgi</groupId>
+            <artifactId>org.osgi.service.metatype.annotations</artifactId>
+            <version>1.4.1</version>
+            <scope>provided</scope>
+        </dependency>
+        
+        <!-- ========== THIRD-PARTY DEPENDENCIES ========== -->
+        
+        <!-- REQUIRED: JSON parsing (already used by binding) -->
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>
             <version>${gson.version}</version>
         </dependency>
-
+        
+        <!-- REQUIRED: Logging facade -->
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>slf4j-api</artifactId>
+            <version>${slf4j.version}</version>
+            <scope>provided</scope>
+        </dependency>
+        
+        <!-- OPTIONAL: Guava utilities -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>${guava.version}</version>
+        </dependency>
+        
         <!-- ========== TEST DEPENDENCIES ========== -->
+        
         <dependency>
             <groupId>junit</groupId>
             <artifactId>junit</artifactId>
+            <version>4.13.2</version>
             <scope>test</scope>
         </dependency>
         
         <dependency>
             <groupId>org.mockito</groupId>
             <artifactId>mockito-core</artifactId>
+            <version>5.7.0</version>
             <scope>test</scope>
         </dependency>
         
@@ -128,327 +146,267 @@
             <version>${openhab.version}</version>
             <scope>test</scope>
         </dependency>
-
-        <!-- ========== OSGi ANNOTATIONS ========== -->
-        <dependency>
-            <groupId>org.osgi</groupId>
-            <artifactId>org.osgi.service.component.annotations</artifactId>
-        </dependency>
-        
-        <dependency>
-            <groupId>org.osgi</groupId>
-            <artifactId>org.osgi.annotation.versioning</artifactId>
-        </dependency>
-
-        <!-- ========== LOGGING ========== -->
-        <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-api</artifactId>
-        </dependency>
     </dependencies>
 
-    <!-- ========== BUILD CONFIGURATION ========== -->
     <build>
         <plugins>
-            <!-- ========== Maven Bundle Plugin ========== -->
+            <!-- REQUIRED: Bundle plugin for OSGi manifest -->
             <plugin>
                 <groupId>org.apache.felix</groupId>
                 <artifactId>maven-bundle-plugin</artifactId>
-                <version>${maven-bundle-plugin.version}</version>
+                <version>5.1.9</version>
                 <extensions>true</extensions>
                 <configuration>
                     <instructions>
-                        <Bundle-SymbolicName>org.openhab.binding.rachio</Bundle-SymbolicName>
-                        <Bundle-Name>openHAB Rachio Binding</Bundle-Name>
-                        <Bundle-Vendor>openHAB Foundation</Bundle-Vendor>
+                        <!-- CRITICAL: Bundle-SymbolicName must match artifactId -->
+                        <Bundle-SymbolicName>${bundle.namespace}</Bundle-SymbolicName>
+                        
+                        <!-- Bundle metadata -->
+                        <Bundle-Name>Rachio Binding</Bundle-Name>
+                        <Bundle-Vendor>OpenHAB Community</Bundle-Vendor>
+                        <Bundle-Version>${project.version}</Bundle-Version>
                         <Bundle-Description>${project.description}</Bundle-Description>
                         <Bundle-DocURL>${project.url}</Bundle-DocURL>
                         
+                        <!-- REQUIRED: Import packages for 5.0.1+ compatibility -->
                         <Import-Package>
-                            !com.google.gson.*,
-                            !com.fasterxml.jackson.*,
-                            !org.junit.*,
-                            !org.mockito.*,
-                            !org.hamcrest.*,
-                            javax.ws.rs.*;version="[2.1,3)",
-                            javax.annotation.*;version="[1.3,2)",
-                            org.eclipse.jdt.annotation.*;version="[2.2,3)",
-                            *;resolution:=optional
+                            !com.google.gson.internal.*,
+                            com.google.gson;version="${gson.version}",
+                            org.osgi.service.component.annotations;version="[1.5,2)",
+                            org.osgi.service.metatype.annotations;version="[1.4,2)",
+                            org.osgi.service.http;version="[1.2,2)",
+                            org.slf4j;version="[1.7,3)",
+                            sun.misc;resolution:=optional,
+                            *
                         </Import-Package>
                         
-                        <DynamicImport-Package>
-                            sun.misc.*
-                        </DynamicImport-Package>
-                        
+                        <!-- REQUIRED: Export package for binding -->
                         <Export-Package>
-                            org.openhab.binding.rachio.internal.*;version="${project.version}"
+                            org.openhab.binding.rachio.internal.api,
+                            org.openhab.binding.rachio.internal.api.dto,
+                            org.openhab.binding.rachio.internal.config,
+                            org.openhab.binding.rachio.internal.discovery,
+                            org.openhab.binding.rachio.internal.handler
                         </Export-Package>
                         
+                        <!-- Service-Component directive for DS annotations -->
                         <Service-Component>
                             OSGI-INF/*.xml
                         </Service-Component>
+                        
+                        <!-- Metatype generation -->
+                        <Meta-Persistence>
+                            META-INF/persistence.xml
+                        </Meta-Persistence>
+                        
+                        <!-- Include all resources -->
+                        <_include>-*.xml</_include>
+                        
+                        <!-- Required headers for OpenHAB 5.x -->
+                        <Require-Capability>
+                            osgi.extender;filter:="(osgi.extender=osgi.serviceloader.registrar)"
+                        </Require-Capability>
+                        
+                        <Provide-Capability>
+                            osgi.serviceloader;osgi.serviceloader=org.openhab.core.thing.binding.ThingHandlerFactory
+                        </Provide-Capability>
                     </instructions>
                 </configuration>
             </plugin>
-
-            <!-- ========== COMPILER PLUGIN ========== -->
+            
+            <!-- REQUIRED: Compiler plugin for Java 11 compatibility -->
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
+                <version>3.11.0</version>
                 <configuration>
+                    <source>11</source>
+                    <target>11</target>
                     <release>11</release>
                     <encoding>UTF-8</encoding>
                     <showWarnings>true</showWarnings>
                     <showDeprecation>true</showDeprecation>
+                    <compilerArgs>
+                        <arg>-Xlint:all</arg>
+                        <arg>-Xlint:-processing</arg>
+                        <!-- Enable null safety annotations -->
+                        <arg>-parameters</arg>
+                    </compilerArgs>
+                    <annotationProcessorPaths>
+                        <!-- Optional: Add annotation processors if needed -->
+                    </annotationProcessorPaths>
                 </configuration>
             </plugin>
-
-            <!-- ========== SPOTLESS CODE FORMATTING ========== -->
+            
+            <!-- Resources plugin -->
             <plugin>
-                <groupId>com.diffplug.spotless</groupId>
-                <artifactId>spotless-maven-plugin</artifactId>
-                <version>${spotless.version}</version>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-resources-plugin</artifactId>
+                <version>3.3.1</version>
                 <configuration>
-                    <java>
-                        <eclipse>
-                            <version>4.26</version>
-                            <file>${project.basedir}/eclipse-java-google-style.xml</file>
-                        </eclipse>
-                        <removeUnusedImports />
-                        <trimTrailingWhitespace />
-                        <endWithNewline />
-                        <indent>
-                            <tabs>false</tabs>
-                            <spaces>true</spaces>
-                        </indent>
-                    </java>
+                    <encoding>UTF-8</encoding>
                 </configuration>
-                <executions>
-                    <execution>
-                        <phase>compile</phase>
-                        <goals>
-                            <goal>apply</goal>
-                        </goals>
-                    </execution>
-                </executions>
             </plugin>
-
-            <!-- ========== SPOTBUGS ========== -->
+            
+            <!-- Surefire plugin for testing -->
             <plugin>
-                <groupId>com.github.spotbugs</groupId>
-                <artifactId>spotbugs-maven-plugin</artifactId>
-                <version>${spotbugs.version}</version>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.1.2</version>
                 <configuration>
-                    <effort>Max</effort>
-                    <threshold>Low</threshold>
-                    <failOnError>true</failOnError>
+                    <systemPropertyVariables>
+                        <java.awt.headless>true</java.awt.headless>
+                    </systemPropertyVariables>
+                    <includes>
+                        <include>**/*Test.java</include>
+                        <include>**/*IT.java</include>
+                    </includes>
                 </configuration>
+            </plugin>
+            
+            <!-- Enforcer plugin for dependency consistency -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+                <version>3.3.0</version>
                 <executions>
                     <execution>
-                        <phase>verify</phase>
+                        <id>enforce-versions</id>
                         <goals>
-                            <goal>check</goal>
+                            <goal>enforce</goal>
                         </goals>
+                        <configuration>
+                            <rules>
+                                <requireJavaVersion>
+                                    <version>[11,17)</version>
+                                </requireJavaVersion>
+                                <requireMavenVersion>
+                                    <version>[3.6,)</version>
+                                </requireMavenVersion>
+                                <bannedDependencies>
+                                    <!-- CRITICAL: Ban direct HTTP client usage -->
+                                    <excludes>
+                                        <exclude>com.sun.net.httpserver:*</exclude>
+                                        <exclude>java.net.http:*</exclude>
+                                        <exclude>javax.servlet:servlet-api</exclude>
+                                    </excludes>
+                                </bannedDependencies>
+                                <dependencyConvergence/>
+                            </rules>
+                        </configuration>
                     </execution>
                 </executions>
             </plugin>
-
-            <!-- ========== JACOCO CODE COVERAGE ========== -->
+            
+            <!-- JAR plugin -->
             <plugin>
-                <groupId>org.jacoco</groupId>
-                <artifactId>jacoco-maven-plugin</artifactId>
-                <executions>
-                    <execution>
-                        <goals>
-                            <goal>prepare-agent</goal>
-                        </goals>
-                    </execution>
-                    <execution>
-                        <id>report</id>
-                        <phase>prepare-package</phase>
-                        <goals>
-                            <goal>report</goal>
-                        </goals>
-                    </execution>
-                </executions>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <version>3.3.0</version>
+                <configuration>
+                    <archive>
+                        <manifestFile>${project.build.outputDirectory}/META-INF/MANIFEST.MF</manifestFile>
+                    </archive>
+                </configuration>
             </plugin>
         </plugins>
+        
+        <!-- Resource filtering -->
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>**/*.properties</include>
+                    <include>**/*.xml</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>src/main/java</directory>
+                <includes>
+                    <include>**/*.java</include>
+                </includes>
+            </resource>
+        </resources>
+        
+        <!-- Test resources -->
+        <testResources>
+            <testResource>
+                <directory>src/test/resources</directory>
+            </testResource>
+        </testResources>
     </build>
 
-    <!-- ========== REPOSITORIES ========== -->
+    <profiles>
+        <!-- Profile for OpenHAB 5.0.1 specific builds -->
+        <profile>
+            <id>oh-5.0.1</id>
+            <properties>
+                <openhab.version>5.0.1</openhab.version>
+            </properties>
+        </profile>
+        
+        <!-- Profile for latest 5.x builds -->
+        <profile>
+            <id>oh-5-latest</id>
+            <properties>
+                <openhab.version>5.4.0</openhab.version>
+            </properties>
+        </profile>
+        
+        <!-- Profile for forward compatibility testing -->
+        <profile>
+            <id>oh-6-preview</id>
+            <properties>
+                <openhab.version>6.0.0-M1</openhab.version>
+            </properties>
+        </profile>
+        
+        <!-- Profile for development with local OpenHAB -->
+        <profile>
+            <id>development</id>
+            <properties>
+                <openhab.version>5.0.1</openhab.version>
+            </properties>
+            <dependencies>
+                <!-- Include test dependencies for development -->
+                <dependency>
+                    <groupId>org.openhab.core</groupId>
+                    <artifactId>org.openhab.core.test.java</artifactId>
+                    <version>${openhab.version}</version>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
+
     <repositories>
+        <!-- OpenHAB repository -->
         <repository>
             <id>openhab-repo</id>
-            <name>openHAB Add-ons</name>
-            <url>https://repo.openhab.org/nexus/content/repositories/</url>
+            <url>https://openhab.jfrog.io/artifactory/libs-release</url>
         </repository>
+        
+        <!-- OpenHAB snapshot repository -->
         <repository>
-            <id>apache-snapshots</id>
-            <name>Apache Snapshots</name>
-            <url>https://repository.apache.org/snapshots</url>
-            <releases>
-                <enabled>false</enabled>
-            </releases>
+            <id>openhab-snapshots</id>
+            <url>https://openhab.jfrog.io/artifactory/libs-snapshot</url>
             <snapshots>
                 <enabled>true</enabled>
             </snapshots>
         </repository>
+        
+        <!-- Maven Central -->
+        <repository>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
+        </repository>
     </repositories>
 
-    <!-- ========== PLUGIN REPOSITORIES ========== -->
     <pluginRepositories>
         <pluginRepository>
-            <id>openhab-repo</id>
-            <name>openHAB Add-ons</name>
-            <url>https://repo.openhab.org/nexus/content/repositories/</url>
+            <id>central</id>
+            <url>https://repo.maven.apache.org/maven2</url>
         </pluginRepository>
     </pluginRepositories>
-
-    <!-- ========== VERSION PROFILES ========== -->
-    <!-- 
-        USAGE:
-        - Default (no profile): 5.0.1
-        - mvn clean install -Plocal-5.0.1        → OpenHAB 5.0.1 (explicit)
-        - mvn clean install -Pcontrib-5.1.0      → OpenHAB 5.1.0-SNAPSHOT
-        - mvn clean install -Plocal-5.0.1,contrib-5.1.0 → Both (if needed)
-    -->
-    
-    <profiles>
-        <!-- ========== PROFILE 1: LOCAL 5.0.1 (Stable Release) ========== -->
-        <profile>
-            <id>local-5.0.1</id>
-            <activation>
-                <activeByDefault>true</activeByDefault> <!-- Default if no profile specified -->
-            </activation>
-            <properties>
-                <openhab.version>5.0.1</openhab.version>
-                <openhab.parent.version>5.0.0</openhab.parent.version>
-                <profile.description>OpenHAB 5.0.1 (Stable Release)</profile.description>
-            </properties>
-        </profile>
-
-        <!-- ========== PROFILE 2: CONTRIB 5.1.0-SNAPSHOT (Development) ========== -->
-        <profile>
-            <id>contrib-5.1.0</id>
-            <properties>
-                <openhab.version>5.1.0-SNAPSHOT</openhab.version>
-                <openhab.parent.version>5.1.0</openhab.parent.version>
-                <profile.description>OpenHAB 5.1.0-SNAPSHOT (Development)</profile.description>
-            </properties>
-            
-            <!-- Additional repositories needed for SNAPSHOT builds -->
-            <repositories>
-                <repository>
-                    <id>openhab-snapshots</id>
-                    <name>openHAB Snapshots</name>
-                    <url>https://repo.openhab.org/nexus/content/repositories/snapshots/</url>
-                    <releases>
-                        <enabled>false</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                        <updatePolicy>daily</updatePolicy>
-                    </snapshots>
-                </repository>
-            </repositories>
-        </profile>
-
-        <!-- ========== PROFILE 3: FUTURE 5.2.0 (Example for Future) ========== -->
-        <profile>
-            <id>future-5.2.0</id>
-            <properties>
-                <openhab.version>5.2.0-SNAPSHOT</openhab.version>
-                <openhab.parent.version>5.2.0</openhab.parent.version>
-                <profile.description>OpenHAB 5.2.0-SNAPSHOT (Future)</profile.description>
-            </properties>
-            
-            <repositories>
-                <repository>
-                    <id>openhab-snapshots</id>
-                    <name>openHAB Snapshots</name>
-                    <url>https://repo.openhab.org/nexus/content/repositories/snapshots/</url>
-                    <releases>
-                        <enabled>false</enabled>
-                    </releases>
-                    <snapshots>
-                        <enabled>true</enabled>
-                        <updatePolicy>daily</updatePolicy>
-                    </snapshots>
-                </repository>
-            </repositories>
-        </profile>
-
-        <!-- ========== PROFILE 4: BACKWARD COMPATIBILITY 4.x (If Needed) ========== -->
-        <profile>
-            <id>legacy-4.2.0</id>
-            <properties>
-                <openhab.version>4.2.0</openhab.version>
-                <openhab.parent.version>4.2.0</openhab.parent.version>
-                <jakarta.servlet.version>3.1.0</jakarta.servlet.version> <!-- javax for 4.x -->
-                <profile.description>OpenHAB 4.2.0 (Legacy Compatibility)</profile.description>
-            </properties>
-            
-            <!-- Override jakarta.servlet with javax.servlet for 4.x -->
-            <dependencies>
-                <dependency>
-                    <groupId>javax.servlet</groupId>
-                    <artifactId>javax.servlet-api</artifactId>
-                    <version>${jakarta.servlet.version}</version>
-                    <scope>provided</scope>
-                </dependency>
-            </dependencies>
-        </profile>
-
-        <!-- ========== UTILITY PROFILES ========== -->
-        <profile>
-            <id>skip-spotless</id>
-            <activation>
-                <property>
-                    <name>skipSpotless</name>
-                </property>
-            </activation>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>com.diffplug.spotless</groupId>
-                        <artifactId>spotless-maven-plugin</artifactId>
-                        <configuration>
-                            <skip>true</skip>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-        
-        <profile>
-            <id>skip-tests</id>
-            <activation>
-                <property>
-                    <name>skipTests</name>
-                    <value>true</value>
-                </property>
-            </activation>
-            <properties>
-                <skipTests>true</skipTests>
-            </properties>
-        </profile>
-        
-        <profile>
-            <id>verbose-build</id>
-            <properties>
-                <maven.test.redirectTestOutputToFile>false</maven.test.redirectTestOutputToFile>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.apache.maven.plugins</groupId>
-                        <artifactId>maven-compiler-plugin</artifactId>
-                        <configuration>
-                            <verbose>true</verbose>
-                        </configuration>
-                    </plugin>
-                </plugins>
-            </build>
-        </profile>
-    </profiles>
 </project>
