@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<logging:logging xmlns:logging="https://openhab.org/schemas/logging/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="https://openhab.org/schemas/logging/v1.0.0 https://openhab.org/schemas/logging-1.0.0.xsd">
+
+	<!-- Main binding logger -->
+	<logger name="org.openhab.binding.rachio">
+		<level>INFO</level>
+	</logger>
+
+	<!-- Internal package for detailed debugging -->
+	<logger name="org.openhab.binding.rachio.internal">
+		<level>DEBUG</level>
+	</logger>
+
+	<!-- Handlers for very detailed tracing -->
+	<logger name="org.openhab.binding.rachio.internal.handler">
+		<level>TRACE</level>
+	</logger>
+
+	<!-- Discovery service logging -->
+	<logger name="org.openhab.binding.rachio.internal.discovery">
+		<level>DEBUG</level>
+	</logger>
+
+	<!-- API communication logging -->
+	<logger name="org.openhab.binding.rachio.internal.api">
+		<level>DEBUG</level>
+	</logger>
+
+	<!-- Webhook/servlet logging -->
+	<logger name="org.openhab.binding.rachio.internal.servlet">
+		<level>DEBUG</level>
+	</logger>
+</logging:logging>
