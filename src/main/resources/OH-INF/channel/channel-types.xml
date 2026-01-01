@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<channel-types xmlns="http://openhab.org/schemas/channel-types/v1.0.0"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xsi:schemaLocation="http://openhab.org/schemas/channel-types/v1.0.0
+                                   https://openhab.org/schemas/channel-types-1.0.0.xsd">
+
+	<!-- ========== BRIDGE CHANNEL TYPES ========== -->
+	<channel-type id="rachio:rateLimitRemaining" advanced="true">
+		<item-type>Number:Dimensionless</item-type>
+		<label>Rate Limit Remaining</label>
+		<description>Number of API calls remaining in current rate limit period</description>
+		<state readOnly="true" pattern="%d"/>
+	</channel-type>
+
+	<channel-type id="rachio:rateLimitPercent" advanced="true">
+		<item-type>Number:Dimensionless</item-type>
+		<label>Rate Limit Percent</label>
+		<description>Percentage of rate limit remaining</description>
+		<state readOnly="true" pattern="%.1f %%"/>
+	</channel-type>
+
+	<channel-type id="rachio:rateLimitStatus">
+		<item-type>String</item-type>
+		<label>Rate Limit Status</label>
+		<description>Current rate limit status (Normal/Warning/Critical)</description>
+		<state readOnly="true"/>
+		<tags>
+			<tag>Status</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:rateLimitReset" advanced="true">
+		<item-type>Number:Time</item-type>
+		<label>Rate Limit Reset</label>
+		<description>Seconds until rate limit resets</description>
+		<state readOnly="true" pattern="%d s"/>
+	</channel-type>
+
+	<!-- ========== DEVICE CHANNEL TYPES ========== -->
+	<channel-type id="rachio:status">
+		<item-type>String</item-type>
+		<label>Device Status</label>
+		<description>Current device status (ONLINE/OFFLINE/SLEEP)</description>
+		<state readOnly="true"/>
+		<tags>
+			<tag>Status</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:paused">
+		<item-type>Switch</item-type>
+		<label>Manual Pause</label>
+		<description>Manual pause status of the device</description>
+		<tags>
+			<tag>Control</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:rainDelay">
+		<item-type>Number:Time</item-type>
+		<label>Rain Delay</label>
+		<description>Rain delay remaining in seconds</description>
+		<state readOnly="true" pattern="%d s"/>
+		<tags>
+			<tag>Weather</tag>
+		</tags>
+	</channel-type>
+
+	<!-- ========== ZONE CHANNEL TYPES ========== -->
+	<channel-type id="rachio:zoneRun">
+		<item-type>Switch</item-type>
+		<label>Zone Run</label>
+		<description>Start or stop watering this zone</description>
+		<tags>
+			<tag>Control</tag>
+			<tag>Irrigation</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:zoneEnabled">
+		<item-type>Switch</item-type>
+		<label>Zone Enabled</label>
+		<description>Enable or disable this zone</description>
+		<tags>
+			<tag>Control</tag>
+			<tag>Irrigation</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:zoneRuntime">
+		<item-type>Number:Time</item-type>
+		<label>Zone Runtime</label>
+		<description>Zone runtime in minutes</description>
+		<state readOnly="true" pattern="%.1f min"/>
+		<tags>
+			<tag>Irrigation</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:soilType">
+		<item-type>String</item-type>
+		<label>Soil Type</label>
+		<description>Soil classification for this zone</description>
+		<state readOnly="true"/>
+		<tags>
+			<tag>Soil</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:cropType">
+		<item-type>String</item-type>
+		<label>Crop Type</label>
+		<description>Crop or plant type for this zone</description>
+		<state readOnly="true"/>
+		<tags>
+			<tag>Crop</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:nozzleType">
+		<item-type>String</item-type>
+		<label>Nozzle Type</label>
+		<description>Sprinkler nozzle type for this zone</description>
+		<state readOnly="true"/>
+		<tags>
+			<tag>Nozzle</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:irrigationEfficiency">
+		<item-type>Number:Dimensionless</item-type>
+		<label>Irrigation Efficiency</label>
+		<description>Water application efficiency percentage</description>
+		<state readOnly="true" pattern="%.1f %%"/>
+		<tags>
+			<tag>Efficiency</tag>
+		</tags>
+	</channel-type>
+
+	<!-- ========== PROFESSIONAL ANALYTICS CHANNEL TYPES ========== -->
+	<channel-type id="rachio:soilWaterContent" advanced="true">
+		<item-type>Number:Length</item-type>
+		<label>Soil Water Content</label>
+		<description>Available water content in the soil (inches)</description>
+		<state readOnly="true" pattern="%.2f in"/>
+		<tags>
+			<tag>Soil</tag>
+			<tag>Analytics</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:cropCoefficient" advanced="true">
+		<item-type>Number:Dimensionless</item-type>
+		<label>Crop Coefficient (Kc)</label>
+		<description>Crop coefficient value for evapotranspiration calculations</description>
+		<state readOnly="true" pattern="%.2f"/>
+		<tags>
+			<tag>Crop</tag>
+			<tag>Analytics</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:precipitationRate" advanced="true">
+		<item-type>Number:VolumetricFlux</item-type>
+		<label>Precipitation Rate</label>
+		<description>Nozzle precipitation rate (inches per hour)</description>
+		<state readOnly="true" pattern="%.2f in/h"/>
+		<tags>
+			<tag>Nozzle</tag>
+			<tag>Analytics</tag>
+		</tags>
+	</channel-type>
+
+	<channel-type id="rachio:rootZoneDepth" advanced="true">
+		<item-type>Number:Length</item-type>
+		<label>Root Zone Depth</label>
+		<description>Root zone depth (inches)</description>
+		<state readOnly="true" pattern="%.1f in"/>
+		<tags>
+			<tag>Soil</tag>
+			<tag>Analytics</tag>
+		</tags>
+	</channel-type>
+
+</channel-types>

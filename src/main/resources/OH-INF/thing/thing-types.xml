@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<thing:thing-descriptions bindingId="rachio"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:thing="https://openhab.org/schemas/thing-descriptions/v1.0.0"
+	xsi:schemaLocation="https://openhab.org/schemas/thing-descriptions/v1.0.0 https://openhab.org/schemas/thing-descriptions-1.0.0.xsd">
+
+	<!-- Bridge Type for Rachio Account -->
+	<bridge-type id="rachio-bridge">
+		<label>Rachio Bridge</label>
+		<description>Rachio Smart Sprinkler Controller Account Bridge</description>
+		<category>irrigation</category>
+		<config-description>
+			<parameter name="apiKey" type="text" required="true">
+				<label>API Key</label>
+				<description>Rachio API Key from https://app.rach.io/</description>
+			</parameter>
+			<parameter name="refresh" type="integer" min="30" max="3600">
+				<label>Refresh Interval</label>
+				<description>Seconds between status updates</description>
+				<default>30</default>
+				<unit>s</unit>
+			</parameter>
+			<parameter name="webhookPort" type="integer" min="1024" max="65535">
+				<label>Webhook Port</label>
+				<description>Port for receiving webhook events from Rachio</description>
+				<default>8088</default>
+			</parameter>
+			<parameter name="webhookEnabled" type="boolean">
+				<label>Enable Webhooks</label>
+				<description>Enable webhook support for real-time events</description>
+				<default>true</default>
+			</parameter>
+			<parameter name="callbackUrl" type="text">
+				<label>Callback URL (Optional)</label>
+				<description>External URL for webhooks (auto-detected if empty)</description>
+			</parameter>
+			<parameter name="ipFilter" type="text">
+				<label>IP Filter (Optional)</label>
+				<description>Comma-separated IP ranges for webhook security</description>
+			</parameter>
+		</config-description>
+	</bridge-type>
+
+	<!-- Device Type for Rachio Controller -->
+	<thing-type id="rachio-device">
+		<label>Rachio Controller</label>
+		<description>Rachio Smart Sprinkler Controller Device</description>
+		<category>irrigation</category>
+		<config-description>
+			<parameter name="deviceId" type="text" required="true">
+				<label>Device ID</label>
+				<description>Rachio Device ID (auto-discovered)</description>
+			</parameter>
+		</config-description>
+		<!-- Channels created programmatically -->
+	</thing-type>
+
+	<!-- Zone Type for Rachio Irrigation Zone -->
+	<thing-type id="rachio-zone">
+		<label>Rachio Zone</label>
+		<description>Rachio Irrigation Zone</description>
+		<category>irrigation</category>
+		<config-description>
+			<parameter name="zoneId" type="text" required="true">
+				<label>Zone ID</label>
+				<description>Rachio Zone ID (auto-discovered)</description>
+			</parameter>
+			<parameter name="deviceId" type="text" required="true">
+				<label>Device ID</label>
+				<description>Parent Rachio Device ID</description>
+			</parameter>
+			<parameter name="defaultRuntime" type="integer" min="60" max="10800">
+				<label>Default Runtime</label>
+				<description>Default watering duration in seconds</description>
+				<default>300</default>
+				<unit>s</unit>
+			</parameter>
+		</config-description>
+		<!-- Channels created programmatically -->
+	</thing-type>
+
+</thing:thing-descriptions>
